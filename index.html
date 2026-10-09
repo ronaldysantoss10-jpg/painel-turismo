@@ -113,11 +113,11 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // LINK DIRETO DE DOWNLOAD DA PLANILHA NO ONEDRIVE/SHAREPOINT
-    const ONEDRIVE_DIRECT_LINK = "https://docs.google.com/spreadsheets/d/1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw/edit?usp=sharing&ouid=114750690809973639853&rtpof=true&sd=true";
+    // COLE AQUI SEU LINK DO GOOGLE DRIVE OU SHAREPOINT
+    const https://docs.google.com/spreadsheets/d/1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw/edit?usp=sharing&ouid=114750690809973639853&rtpof=true&sd=true = "";
     
     // SENHA DE ACESSO AO PAINEL
-    const PAINEL_PASSWORD = "CGQT12";
+    const PAINEL_PASSWORD = "CGQT123";
 
     const UF_COORDINATES = {
       AC: [-8.77, -70.55], AL: [-9.57, -36.78], AM: [-3.07, -61.66], AP: [1.41, -51.77],
@@ -145,7 +145,7 @@
       { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "MUNICÍPIO DE CAPELA", ano: "2026", instrumento: "Convênio nº 981970/2025", sei: "72031.007719/2025-81", fonte: "RP8", regiao: "Nordeste", uf: "SE", cidade: "Capela", local: "Capela", cursos: 1, vagas: 200, matriculados: 0, qualificados: 0 },
       { tipo: "SECRETARIAS E GOVERNOS ESTADUAIS", parceiro: "Secretaria Estadual de Turismo do Rio Grande do Norte (SETUR-RN)", ano: "2026", instrumento: "Convênio nº 970061/2024", sei: "72031.002432/2024-84", fonte: "RP6", regiao: "Nordeste", uf: "RN", cidade: "Natal", local: "Natal", cursos: 4, vagas: 900, matriculados: 646, qualificados: 311 },
       { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Escola Nacional de Turismo (IFPA)", ano: "2025", instrumento: "TED nº 968127/2024", sei: "72031.001167/2024-17", fonte: "RP2", regiao: "Norte", uf: "PA", cidade: "Belém", local: "Belém, Santarém, Vigia, Bragança", cursos: 179, vagas: 5600, matriculados: 3978, qualificados: 3109 },
-      { tipo: "SISTEMA S", parceiro: "SENAC (Qualificação Nacional)", ano: "2024", instrumento: "Acordo de Cooperação", sei: "72031.0000100/2024-00", fonte: "Próprio", regiao: "Centro Oeste", uf: "DF", cidade: "Brasília", local: "Nacional", cursos: 119, vagas: 16418, matriculados: 6106, qualificados: 3140 },
+      { tipo: "SISTEMA S", parceiro: "SENAC (Qualificação Nacional)", ano: "2024", instrumento: "Acordo de Cooperação", sei: "72031.000100/2024-00", fonte: "Próprio", regiao: "Centro Oeste", uf: "DF", cidade: "Brasília", local: "Nacional", cursos: 119, vagas: 16418, matriculados: 6106, qualificados: 3140 },
       { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Instituto Federal de Alagoas", ano: "2023", instrumento: "TED nº 950012/2023", sei: "72031.000012/2023-11", fonte: "RP2", regiao: "Nordeste", uf: "AL", cidade: "Maceió", local: "Maceió", cursos: 45, vagas: 12000, matriculados: 8397, qualificados: 5877 }
     ];
 
@@ -166,7 +166,6 @@
     }
 
     function App() {
-      // Estado de Autenticação Persistente com localStorage
       const [isAuthenticated, setIsAuthenticated] = useState(() => {
         return localStorage.getItem('painel_authenticated') === 'true';
       });
@@ -292,16 +291,28 @@
         setLastUpdated(horaAtual);
       };
 
+      // Converter links do Google Drive para link direto de download
+      const getDirectUrl = (url) => {
+        if (!url) return '';
+        if (url.includes('drive.google.com')) {
+          const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+          if (match && match[1]) {
+            return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
+          }
+        }
+        return url;
+      };
+
       useEffect(() => {
         const timeStamp = new Date().getTime();
 
-        if (ONEDRIVE_DIRECT_LINK && ONEDRIVE_DIRECT_LINK.length > 5) {
-          // Utilizando o CORS Proxy para evitar bloqueios no SharePoint/Vercel
-          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(ONEDRIVE_DIRECT_LINK + "&v=" + timeStamp);
+        if (PLANILHA_URL && PLANILHA_URL.length > 5) {
+          const targetUrl = getDirectUrl(PLANILHA_URL);
+          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(targetUrl + (targetUrl.includes('?') ? '&' : '?') + "v=" + timeStamp);
 
           fetch(PROXY_URL)
             .then(res => {
-              if (!res.ok) throw new Error('Falha na resposta do Proxy');
+              if (!res.ok) throw new Error('Falha no download via Proxy');
               return res.arrayBuffer();
             })
             .then(buffer => {
@@ -309,10 +320,14 @@
               if (wb.SheetNames.includes('Geral')) {
                 const ws = wb.Sheets['Geral'];
                 const rawJson = XLSX.utils.sheet_to_json(ws);
-                processSheetData(rawJson, 'Sincronizado OneDrive');
+                processSheetData(rawJson, 'Sincronizado Nuvem');
+              } else if (wb.SheetNames.length > 0) {
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rawJson = XLSX.utils.sheet_to_json(ws);
+                processSheetData(rawJson, 'Sincronizado Nuvem');
               }
             })
-            .catch(err => console.log('Sincronização OneDrive via Proxy falhou, tentando local...', err));
+            .catch(err => console.log('Falha na sincronização online, tentando local...', err));
         }
 
         function tryLoadFile(targetName) {
@@ -349,12 +364,8 @@
             const bstr = evt.target.result;
             const wb = XLSX.read(bstr, { type: 'binary' });
 
-            if (!wb.SheetNames.includes('Geral')) {
-              alert('A aba "Geral" não foi encontrada na planilha.');
-              return;
-            }
-
-            const ws = wb.Sheets['Geral'];
+            const sheetName = wb.SheetNames.includes('Geral') ? 'Geral' : wb.SheetNames[0];
+            const ws = wb.Sheets[sheetName];
             const rawJson = XLSX.utils.sheet_to_json(ws);
             processSheetData(rawJson, file.name);
 
