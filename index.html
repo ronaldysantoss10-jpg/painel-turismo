@@ -113,10 +113,11 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // COLE AQUI O LINK DIRETO DE DOWNLOAD DA SUA PLANILHA NO ONEDRIVE/GOOGLE DRIVE
-const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/ronaldy_santos_turismo_gov_br/cQpGoiBMvp-xQYjNpOLIj66SEgUC_bEeclzAdEA90zH8f-TtRQ?download=1";
+    // LINK DIRETO DE DOWNLOAD DA PLANILHA NO ONEDRIVE/SHAREPOINT
+    const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/ronaldy_santos_turismo_gov_br/cQpGoiBMvp-xQYjNpOLIj66SEgUC_bEeclzAdEA90zH8f-TtRQ?download=1";
+    
     // SENHA DE ACESSO AO PAINEL
-    const PAINEL_PASSWORD = "CGQT";
+    const PAINEL_PASSWORD = "CGQT1";
 
     const UF_COORDINATES = {
       AC: [-8.77, -70.55], AL: [-9.57, -36.78], AM: [-3.07, -61.66], AP: [1.41, -51.77],
@@ -144,7 +145,7 @@ const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/r
       { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "MUNICÍPIO DE CAPELA", ano: "2026", instrumento: "Convênio nº 981970/2025", sei: "72031.007719/2025-81", fonte: "RP8", regiao: "Nordeste", uf: "SE", cidade: "Capela", local: "Capela", cursos: 1, vagas: 200, matriculados: 0, qualificados: 0 },
       { tipo: "SECRETARIAS E GOVERNOS ESTADUAIS", parceiro: "Secretaria Estadual de Turismo do Rio Grande do Norte (SETUR-RN)", ano: "2026", instrumento: "Convênio nº 970061/2024", sei: "72031.002432/2024-84", fonte: "RP6", regiao: "Nordeste", uf: "RN", cidade: "Natal", local: "Natal", cursos: 4, vagas: 900, matriculados: 646, qualificados: 311 },
       { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Escola Nacional de Turismo (IFPA)", ano: "2025", instrumento: "TED nº 968127/2024", sei: "72031.001167/2024-17", fonte: "RP2", regiao: "Norte", uf: "PA", cidade: "Belém", local: "Belém, Santarém, Vigia, Bragança", cursos: 179, vagas: 5600, matriculados: 3978, qualificados: 3109 },
-      { tipo: "SISTEMA S", parceiro: "SENAC (Qualificação Nacional)", ano: "2024", instrumento: "Acordo de Cooperação", sei: "72031.000100/2024-00", fonte: "Próprio", regiao: "Centro Oeste", uf: "DF", cidade: "Brasília", local: "Nacional", cursos: 119, vagas: 16418, matriculados: 6106, qualificados: 3140 },
+      { tipo: "SISTEMA S", parceiro: "SENAC (Qualificação Nacional)", ano: "2024", instrumento: "Acordo de Cooperação", sei: "72031.0000100/2024-00", fonte: "Próprio", regiao: "Centro Oeste", uf: "DF", cidade: "Brasília", local: "Nacional", cursos: 119, vagas: 16418, matriculados: 6106, qualificados: 3140 },
       { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Instituto Federal de Alagoas", ano: "2023", instrumento: "TED nº 950012/2023", sei: "72031.000012/2023-11", fonte: "RP2", regiao: "Nordeste", uf: "AL", cidade: "Maceió", local: "Maceió", cursos: 45, vagas: 12000, matriculados: 8397, qualificados: 5877 }
     ];
 
@@ -295,8 +296,14 @@ const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/r
         const timeStamp = new Date().getTime();
 
         if (ONEDRIVE_DIRECT_LINK && ONEDRIVE_DIRECT_LINK.length > 5) {
-          fetch(ONEDRIVE_DIRECT_LINK + '?v=' + timeStamp)
-            .then(res => res.arrayBuffer())
+          // Utilizando o CORS Proxy para evitar bloqueios no SharePoint/Vercel
+          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(ONEDRIVE_DIRECT_LINK + "&v=" + timeStamp);
+
+          fetch(PROXY_URL)
+            .then(res => {
+              if (!res.ok) throw new Error('Falha na resposta do Proxy');
+              return res.arrayBuffer();
+            })
             .then(buffer => {
               const wb = XLSX.read(buffer, { type: 'array' });
               if (wb.SheetNames.includes('Geral')) {
@@ -305,7 +312,7 @@ const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/r
                 processSheetData(rawJson, 'Sincronizado OneDrive');
               }
             })
-            .catch(err => console.log('Sincronização OneDrive falhou, tentando local...', err));
+            .catch(err => console.log('Sincronização OneDrive via Proxy falhou, tentando local...', err));
         }
 
         function tryLoadFile(targetName) {
