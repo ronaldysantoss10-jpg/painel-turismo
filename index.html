@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relatório Geral - Qualificação do Turismo</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel para JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- SheetJS (XLSX Parser) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Chart.js para Gráficos Interativos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Leaflet CSS & JS para o Mapa Interativo -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Fontes Globais -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    #map {
+      height: 440px;
+      width: 100%;
+      border-radius: 1rem;
+      z-index: 1;
+    }
+
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 8mm;
+      }
+      body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        font-size: 8pt !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-break-inside-avoid {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+      .max-w-\[1600px\] {
+        max-width: 100% !important;
+        padding: 0 !important;
+      }
+
+      .grid-cols-1, .lg\:grid-cols-2 {
+        display: block !important;
+      }
+      .grid-cols-1 > div, .lg\:grid-cols-2 > div {
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+        page-break-inside: avoid !important;
+      }
+
+      .h-64, .h-56 {
+        height: 220px !important;
+        width: 100% !important;
+      }
+
+      table {
+        width: 100% !important;
+        table-layout: fixed !important;
+        font-size: 7.5pt !important;
+      }
+      th, td {
+        padding: 4px 2px !important;
+        word-wrap: break-word !important;
+        white-space: normal !important;
+      }
+      #map {
+        height: 260px !important;
+        width: 100% !important;
+        break-inside: avoid;
+      }
+      .shadow-sm, .shadow-md {
+        box-shadow: none !important;
+      }
+      .border {
+        border-color: #cbd5e1 !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-colors duration-200">
+  <div id="root"></div>
+
+  <!-- Script da Aplicação React -->
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    // COLE AQUI O LINK DIRETO DE DOWNLOAD DA SUA PLANILHA NO ONEDRIVE/GOOGLE DRIVE
+const ONEDRIVE_DIRECT_LINK = "https://mturgov-my.sharepoint.com/:x:/g/personal/ronaldy_santos_turismo_gov_br/cQpGoiBMvp-xQYjNpOLIj66SEgUC_bEeclzAdEA90zH8f-TtRQ?download=1";
+    // SENHA DE ACESSO AO PAINEL
+    const PAINEL_PASSWORD = "CGQT";
+
+    const UF_COORDINATES = {
+      AC: [-8.77, -70.55], AL: [-9.57, -36.78], AM: [-3.07, -61.66], AP: [1.41, -51.77],
+      BA: [-12.96, -38.51], CE: [-5.20, -39.53], DF: [-15.78, -47.92], ES: [-19.18, -40.30],
+      GO: [-15.83, -49.86], MA: [-5.42, -45.44], MG: [-18.51, -44.55], MS: [-20.77, -54.78],
+      MT: [-12.64, -55.42], PA: [-1.99, -54.93], PB: [-7.24, -36.78], PE: [-8.81, -36.95],
+      PI: [-7.71, -42.72], PR: [-24.89, -51.55], RJ: [-22.84, -43.15], RN: [-5.22, -36.52],
+      RO: [-11.22, -62.80], RR: [1.82, -61.30], RS: [-30.03, -51.23], SC: [-27.24, -50.21],
+      SE: [-10.57, -37.38], SP: [-23.55, -46.63], TO: [-10.17, -48.33]
+    };
+
+    const UF_TO_REGION = {
+      AC: 'Norte', AM: 'Norte', AP: 'Norte', PA: 'Norte', RO: 'Norte', RR: 'Norte', TO: 'Norte',
+      AL: 'Nordeste', BA: 'Nordeste', CE: 'Nordeste', MA: 'Nordeste', PB: 'Nordeste', PE: 'Nordeste', PI: 'Nordeste', RN: 'Nordeste', SE: 'Nordeste',
+      DF: 'Centro Oeste', GO: 'Centro Oeste', MS: 'Centro Oeste', MT: 'Centro Oeste',
+      ES: 'Sudeste', MG: 'Sudeste', RJ: 'Sudeste', SP: 'Sudeste',
+      PR: 'Sul', RS: 'Sul', SC: 'Sul'
+    };
+
+    const INITIAL_GERAL_DATA = [
+      { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "PREFEITURA MUNICIPAL DE CANINDÉ DE SÃO FRANCISCO", ano: "2026", instrumento: "Convênio nº 981733/2025", sei: "72031.007722/2025-03", fonte: "RP8", regiao: "Nordeste", uf: "SE", cidade: "Canindé de São Francisco", local: "Canindé de São Francisco", cursos: 13, vagas: 275, matriculados: 0, qualificados: 0 },
+      { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "Prefeitura Municipal de Trajano de Moraes", ano: "2026", instrumento: "Convênio nº 981834/2025", sei: "72031.007737/2025-63", fonte: "RP8", regiao: "Sudeste", uf: "RJ", cidade: "Trajano de Moraes", local: "Trajano de Moraes", cursos: 23, vagas: 592, matriculados: 0, qualificados: 0 },
+      { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "Prefeitura Municipal de Nilópolis", ano: "2027", instrumento: "Convênio nº 982154/2025", sei: "72031.007723/2025-40", fonte: "RP8", regiao: "Sudeste", uf: "RJ", cidade: "Nilópolis", local: "Nilópolis", cursos: 3, vagas: 150, matriculados: 0, qualificados: 0 },
+      { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "Municipio de Porangatu", ano: "2026", instrumento: "Convênio nº 981938/2025", sei: "72031.007744/2025-65", fonte: "RP8", regiao: "Centro Oeste", uf: "GO", cidade: "Porangatu", local: "Porangatu", cursos: 4, vagas: 250, matriculados: 0, qualificados: 0 },
+      { tipo: "PREFEITURAS E MUNICÍPIOS", parceiro: "MUNICÍPIO DE CAPELA", ano: "2026", instrumento: "Convênio nº 981970/2025", sei: "72031.007719/2025-81", fonte: "RP8", regiao: "Nordeste", uf: "SE", cidade: "Capela", local: "Capela", cursos: 1, vagas: 200, matriculados: 0, qualificados: 0 },
+      { tipo: "SECRETARIAS E GOVERNOS ESTADUAIS", parceiro: "Secretaria Estadual de Turismo do Rio Grande do Norte (SETUR-RN)", ano: "2026", instrumento: "Convênio nº 970061/2024", sei: "72031.002432/2024-84", fonte: "RP6", regiao: "Nordeste", uf: "RN", cidade: "Natal", local: "Natal", cursos: 4, vagas: 900, matriculados: 646, qualificados: 311 },
+      { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Escola Nacional de Turismo (IFPA)", ano: "2025", instrumento: "TED nº 968127/2024", sei: "72031.001167/2024-17", fonte: "RP2", regiao: "Norte", uf: "PA", cidade: "Belém", local: "Belém, Santarém, Vigia, Bragança", cursos: 179, vagas: 5600, matriculados: 3978, qualificados: 3109 },
+      { tipo: "SISTEMA S", parceiro: "SENAC (Qualificação Nacional)", ano: "2024", instrumento: "Acordo de Cooperação", sei: "72031.000100/2024-00", fonte: "Próprio", regiao: "Centro Oeste", uf: "DF", cidade: "Brasília", local: "Nacional", cursos: 119, vagas: 16418, matriculados: 6106, qualificados: 3140 },
+      { tipo: "INSTITUTOS FEDERAIS E UNIVERSIDADES", parceiro: "Instituto Federal de Alagoas", ano: "2023", instrumento: "TED nº 950012/2023", sei: "72031.000012/2023-11", fonte: "RP2", regiao: "Nordeste", uf: "AL", cidade: "Maceió", local: "Maceió", cursos: 45, vagas: 12000, matriculados: 8397, qualificados: 5877 }
+    ];
+
+    function formatInstitutionName(fullName) {
+      if (!fullName) return '';
+      let name = fullName.trim();
+      if (/SENAC/i.test(name)) return 'SENAC';
+      const siglaMatch = name.match(/[\(\-]\s*([A-Z]{2,10})\s*[\)]?$/i);
+      if (siglaMatch && siglaMatch[1]) return siglaMatch[1].toUpperCase();
+      if (/prefeitura|município/i.test(name)) {
+        name = name.replace(/PREFEITURA MUNICIPAL DE /i, 'Prefeitura ')
+                   .replace(/PREFEITURA MUNICIPAL /i, 'Prefeitura ')
+                   .replace(/MUNICÍPIO DE /i, 'Prefeitura ')
+                   .replace(/Municipio de /i, 'Prefeitura ');
+      }
+      if (name.length > 22) return name.substring(0, 20) + '...';
+      return name;
+    }
+
+    function App() {
+      // Estado de Autenticação Persistente com localStorage
+      const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        return localStorage.getItem('painel_authenticated') === 'true';
+      });
+      const [inputPassword, setInputPassword] = useState('');
+      const [loginError, setLoginError] = useState(false);
+
+      const [data, setData] = useState(INITIAL_GERAL_DATA);
+      const [fileName, setFileName] = useState('');
+      const [lastUpdated, setLastUpdated] = useState('');
+      
+      const [darkMode, setDarkMode] = useState(false);
+
+      // Filtros Gerais
+      const [selectedYear, setSelectedYear] = useState('TODOS');
+      const [selectedRegiao, setSelectedRegiao] = useState('TODOS');
+      const [selectedUf, setSelectedUf] = useState('TODOS');
+      const [selectedTipo, setSelectedTipo] = useState('TODOS');
+      const [selectedFonte, setSelectedFonte] = useState('TODOS');
+      const [searchTerm, setSearchTerm] = useState('');
+
+      // Filtro Rápido
+      const [kpiFilter, setKpiFilter] = useState('TODOS');
+
+      // Ordenação da Tabela
+      const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+      // Paginação
+      const [currentPage, setCurrentPage] = useState(1);
+      const [itemsPerPage, setItemsPerPage] = useState(10);
+
+      // Aba Ativa de Gráficos
+      const [activeTab, setActiveTab] = useState('evolucao');
+
+      // Refs
+      const lineTrendRef = useRef(null);
+      const pieVagasRef = useRef(null);
+      const barVagasRef = useRef(null);
+      const pieMatriculasRef = useRef(null);
+      const barMatriculasRef = useRef(null);
+      const pieQualificadosRef = useRef(null);
+      const barQualificadosRef = useRef(null);
+      
+      const mapInstance = useRef(null);
+      const chartInstances = useRef({});
+
+      const handleLoginSubmit = (e) => {
+        e.preventDefault();
+        if (inputPassword === PAINEL_PASSWORD) {
+          setIsAuthenticated(true);
+          localStorage.setItem('painel_authenticated', 'true');
+          setLoginError(false);
+        } else {
+          setLoginError(true);
+        }
+      };
+
+      const handleLogout = () => {
+        setIsAuthenticated(false);
+        localStorage.removeItem('painel_authenticated');
+      };
+
+      useEffect(() => {
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }, [darkMode]);
+
+      const isFilterActive = selectedYear !== 'TODOS' || selectedRegiao !== 'TODOS' || selectedUf !== 'TODOS' || selectedTipo !== 'TODOS' || selectedFonte !== 'TODOS' || searchTerm !== '' || kpiFilter !== 'TODOS';
+
+      const resetFilters = () => {
+        setSelectedYear('TODOS');
+        setSelectedRegiao('TODOS');
+        setSelectedUf('TODOS');
+        setSelectedTipo('TODOS');
+        setSelectedFonte('TODOS');
+        setSearchTerm('');
+        setKpiFilter('TODOS');
+        setCurrentPage(1);
+      };
+
+      const processSheetData = (rawJson, name) => {
+        const parsedData = rawJson.map(row => {
+          let parceiroOriginal = row['Instituições Parceiras'] || '';
+          if (/SENAC/i.test(parceiroOriginal)) {
+            parceiroOriginal = parceiroOriginal.replace(/\/ ?CNC/i, '').trim();
+          }
+
+          let rawAno = row['Ano'];
+          let parsedAno = 'S/A';
+          if (rawAno !== undefined && rawAno !== null) {
+            let anoStr = String(rawAno).trim();
+            let match = anoStr.match(/\d{4}/);
+            if (match) parsedAno = match[0];
+          }
+
+          let uf = (row['UF'] || '').toString().trim().toUpperCase();
+          let regiao = row['Região'] ? String(row['Região']).trim() : (UF_TO_REGION[uf] || 'Outros');
+
+          return {
+            tipo: row['Tipo de Instituição'] || '',
+            parceiro: parceiroOriginal,
+            ano: parsedAno,
+            instrumento: (row['Instrumento'] || '').toString().replace('\xa0', ' '),
+            sei: row['Nº SEI'] || '',
+            fonte: row['Fonte de Recurso'] || '',
+            regiao: regiao,
+            uf: uf,
+            cidade: row['Cidade Sede'] || '',
+            local: row['Local de Realização'] || '',
+            cursos: Number(row['Cursos']) || 0,
+            vagas: Number(row[' Vagas']) || Number(row['Vagas']) || 0,
+            matriculados: Number(row['Matriculados']) || 0,
+            qualificados: Number(row['Qualificados']) || 0,
+          };
+        });
+
+        setData(parsedData);
+        setFileName(name);
+        setCurrentPage(1);
+        const horaAtual = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setLastUpdated(horaAtual);
+      };
+
+      useEffect(() => {
+        const timeStamp = new Date().getTime();
+
+        if (ONEDRIVE_DIRECT_LINK && ONEDRIVE_DIRECT_LINK.length > 5) {
+          fetch(ONEDRIVE_DIRECT_LINK + '?v=' + timeStamp)
+            .then(res => res.arrayBuffer())
+            .then(buffer => {
+              const wb = XLSX.read(buffer, { type: 'array' });
+              if (wb.SheetNames.includes('Geral')) {
+                const ws = wb.Sheets['Geral'];
+                const rawJson = XLSX.utils.sheet_to_json(ws);
+                processSheetData(rawJson, 'Sincronizado OneDrive');
+              }
+            })
+            .catch(err => console.log('Sincronização OneDrive falhou, tentando local...', err));
+        }
+
+        function tryLoadFile(targetName) {
+          return fetch('./' + targetName + '?v=' + timeStamp, { cache: 'no-store' })
+            .then(res => {
+              if (!res.ok) throw new Error('Não encontrado');
+              return res.arrayBuffer();
+            })
+            .then(buffer => {
+              const wb = XLSX.read(buffer, { type: 'array' });
+              if (wb.SheetNames.includes('Geral')) {
+                const ws = wb.Sheets['Geral'];
+                const rawJson = XLSX.utils.sheet_to_json(ws);
+                processSheetData(rawJson, targetName);
+                return true;
+              }
+              return false;
+            });
+        }
+
+        tryLoadFile('Relatorio_Geral.xlsx')
+          .catch(() => tryLoadFile('Relatorio_Geral.xlsx.xlsx'))
+          .catch(() => tryLoadFile('Relatório_Geral.xlsx'))
+          .catch(err => console.log('Carregando base inicial padrão'));
+      }, []);
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const bstr = evt.target.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+
+            if (!wb.SheetNames.includes('Geral')) {
+              alert('A aba "Geral" não foi encontrada na planilha.');
+              return;
+            }
+
+            const ws = wb.Sheets['Geral'];
+            const rawJson = XLSX.utils.sheet_to_json(ws);
+            processSheetData(rawJson, file.name);
+
+          } catch (error) {
+            console.error("Erro ao ler arquivo:", error);
+            alert("Erro ao processar a planilha.");
+          }
+        };
+        reader.readAsBinaryString(file);
+      };
+
+      useEffect(() => {
+        setCurrentPage(1);
+      }, [selectedYear, selectedRegiao, selectedUf, selectedTipo, selectedFonte, searchTerm, kpiFilter]);
+
+      const filteredData = useMemo(() => {
+        return data.filter(row => {
+          const matchesYear = selectedYear === 'TODOS' || String(row.ano) === String(selectedYear);
+          const matchesRegiao = selectedRegiao === 'TODOS' || row.regiao === selectedRegiao;
+          const matchesUf = selectedUf === 'TODOS' || row.uf === selectedUf;
+          const matchesTipo = selectedTipo === 'TODOS' || row.tipo === selectedTipo;
+          const matchesFonte = selectedFonte === 'TODOS' || row.fonte === selectedFonte;
+          
+          let matchesKpi = true;
+          if (kpiFilter === 'COM_MATRICULA') matchesKpi = row.matriculados > 0;
+          else if (kpiFilter === 'COM_QUALIFICADO') matchesKpi = row.qualificados > 0;
+          else if (kpiFilter === 'SEM_MATRICULA') matchesKpi = row.matriculados === 0;
+
+          const searchLower = searchTerm.toLowerCase();
+          const matchesSearch = 
+            row.parceiro.toLowerCase().includes(searchLower) ||
+            row.uf.toLowerCase().includes(searchLower) ||
+            row.regiao.toLowerCase().includes(searchLower) ||
+            row.cidade.toLowerCase().includes(searchLower) ||
+            row.instrumento.toLowerCase().includes(searchLower) ||
+            row.sei.toLowerCase().includes(searchLower) ||
+            row.fonte.toLowerCase().includes(searchLower);
+
+          return matchesYear && matchesRegiao && matchesUf && matchesTipo && matchesFonte && matchesKpi && matchesSearch;
+        });
+      }, [data, selectedYear, selectedRegiao, selectedUf, selectedTipo, selectedFonte, kpiFilter, searchTerm]);
+
+      const sortedData = useMemo(() => {
+        if (!sortConfig.key) return filteredData;
+        return [...filteredData].sort((a, b) => {
+          let aValue = a[sortConfig.key];
+          let bValue = b[sortConfig.key];
+
+          if (sortConfig.key === 'taxaConclusao') {
+            aValue = a.matriculados > 0 ? (a.qualificados / a.matriculados) : 0;
+            bValue = b.matriculados > 0 ? (b.qualificados / b.matriculados) : 0;
+          }
+
+          if (typeof aValue === 'string') {
+            return sortConfig.direction === 'asc' 
+              ? aValue.localeCompare(bValue) 
+              : bValue.localeCompare(aValue);
+          }
+          return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+        });
+      }, [filteredData, sortConfig]);
+
+      const handleSort = (key) => {
+        setSortConfig(prev => ({
+          key,
+          direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+      };
+
+      const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
+      const paginatedData = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return sortedData.slice(start, start + itemsPerPage);
+      }, [sortedData, currentPage, itemsPerPage]);
+
+      const kpis = useMemo(() => {
+        const totalVagas = filteredData.reduce((acc, r) => acc + r.vagas, 0);
+        const totalMatriculados = filteredData.reduce((acc, r) => acc + r.matriculados, 0);
+        const totalQualificados = filteredData.reduce((acc, r) => acc + r.qualificados, 0);
+        const totalCursos = filteredData.reduce((acc, r) => acc + r.cursos, 0);
+
+        const taxaConclusaoNum = totalMatriculados > 0 ? (totalQualificados / totalMatriculados) * 100 : 0;
+        const taxaEvasaoNum = totalMatriculados > 0 ? ((totalMatriculados - totalQualificados) / totalMatriculados) * 100 : 0;
+
+        return {
+          vagas: totalVagas,
+          matriculados: totalMatriculados,
+          qualificados: totalQualificados,
+          cursos: totalCursos,
+          taxaPreenchimento: totalVagas > 0 ? ((totalMatriculados / totalVagas) * 100).toFixed(1) : '0.0',
+          taxaConclusao: taxaConclusaoNum.toFixed(1),
+          taxaEvasao: taxaEvasaoNum.toFixed(1),
+        };
+      }, [filteredData]);
+
+      const metricasPorAno = useMemo(() => {
+        const base = data.filter(row => {
+          const matchesRegiao = selectedRegiao === 'TODOS' || row.regiao === selectedRegiao;
+          const matchesUf = selectedUf === 'TODOS' || row.uf === selectedUf;
+          const matchesTipo = selectedTipo === 'TODOS' || row.tipo === selectedTipo;
+          const matchesFonte = selectedFonte === 'TODOS' || row.fonte === selectedFonte;
+          const searchLower = searchTerm.toLowerCase();
+          const matchesSearch = 
+            row.parceiro.toLowerCase().includes(searchLower) ||
+            row.uf.toLowerCase().includes(searchLower) ||
+            row.cidade.toLowerCase().includes(searchLower) ||
+            row.instrumento.toLowerCase().includes(searchLower) ||
+            row.sei.toLowerCase().includes(searchLower) ||
+            row.fonte.toLowerCase().includes(searchLower);
+
+          return matchesRegiao && matchesUf && matchesTipo && matchesFonte && matchesSearch;
+        });
+
+        const agrupado = base.reduce((acc, curr) => {
+          const ano = curr.ano || 'S/A';
+          if (!acc[ano]) acc[ano] = { vagas: 0, matriculados: 0, qualificados: 0, cursos: 0 };
+          acc[ano].vagas += curr.vagas;
+          acc[ano].matriculados += curr.matriculados;
+          acc[ano].qualificados += curr.qualificados;
+          acc[ano].cursos += curr.cursos;
+          return acc;
+        }, {});
+
+        return Object.entries(agrupado)
+          .sort((a, b) => {
+            if (a[0] === 'S/A') return 1;
+            if (b[0] === 'S/A') return -1;
+            return Number(a[0]) - Number(b[0]);
+          })
+          .map(([ano, info]) => ({ ano, ...info }));
+      }, [data, selectedRegiao, selectedUf, selectedTipo, selectedFonte, searchTerm]);
+
+      useEffect(() => {
+        if (!isAuthenticated) return;
+
+        if (activeTab === 'evolucao' && lineTrendRef.current) {
+          if (chartInstances.current['line_trend']) chartInstances.current['line_trend'].destroy();
+
+          const labels = metricasPorAno.map(item => item.ano);
+          const vagasData = metricasPorAno.map(item => item.vagas);
+          const matriculasData = metricasPorAno.map(item => item.matriculados);
+          const qualificadosData = metricasPorAno.map(item => item.qualificados);
+
+          chartInstances.current['line_trend'] = new Chart(lineTrendRef.current, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: 'Vagas Ofertadas',
+                  data: vagasData,
+                  borderColor: '#2563eb',
+                  backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                  tension: 0.3,
+                  fill: true,
+                  borderWidth: 3
+                },
+                {
+                  label: 'Matriculados',
+                  data: matriculasData,
+                  borderColor: '#d97706',
+                  backgroundColor: 'rgba(217, 119, 6, 0.1)',
+                  tension: 0.3,
+                  fill: true,
+                  borderWidth: 3
+                },
+                {
+                  label: 'Qualificados',
+                  data: qualificadosData,
+                  borderColor: '#059669',
+                  backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                  tension: 0.3,
+                  fill: true,
+                  borderWidth: 3
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top', labels: { font: { size: 12, weight: 'bold' }, color: darkMode ? '#cbd5e1' : '#334155' } }
+              },
+              scales: {
+                y: { beginAtZero: true, ticks: { color: darkMode ? '#94a3b8' : '#64748b' } },
+                x: { ticks: { font: { size: 11, weight: 'bold' }, color: darkMode ? '#94a3b8' : '#64748b' } }
+              }
+            }
+          });
+        }
+      }, [isAuthenticated, activeTab, metricasPorAno, darkMode]);
+
+      const renderChartPair = (pieCanvas, barCanvas, key, metric, mainColor, colors) => {
+        if (!pieCanvas || !barCanvas) return;
+
+        const porTipo = filteredData.reduce((acc, curr) => {
+          acc[curr.tipo] = (acc[curr.tipo] || 0) + curr[metric];
+          return acc;
+        }, {});
+
+        const porParceiro = filteredData.reduce((acc, curr) => {
+          acc[curr.parceiro] = (acc[curr.parceiro] || 0) + curr[metric];
+          return acc;
+        }, {});
+
+        const sortedParceiros = Object.entries(porParceiro)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+
+        if (chartInstances.current[`pie_${key}`]) chartInstances.current[`pie_${key}`].destroy();
+        if (chartInstances.current[`bar_${key}`]) chartInstances.current[`bar_${key}`].destroy();
+
+        chartInstances.current[`pie_${key}`] = new Chart(pieCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: Object.keys(porTipo),
+            datasets: [{ data: Object.values(porTipo), backgroundColor: colors }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, color: darkMode ? '#cbd5e1' : '#334155' } } }
+          }
+        });
+
+        const fullNames = sortedParceiros.map(p => p[0]);
+        const shortNames = sortedParceiros.map(p => formatInstitutionName(p[0]));
+
+        chartInstances.current[`bar_${key}`] = new Chart(barCanvas, {
+          type: 'bar',
+          data: {
+            labels: shortNames,
+            datasets: [{
+              label: metric.charAt(0).toUpperCase() + metric.slice(1),
+              data: sortedParceiros.map(p => p[1]),
+              backgroundColor: mainColor,
+              borderRadius: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+              legend: { display: false },
+              tooltip: { callbacks: { title: (tooltipItems) => fullNames[tooltipItems[0].dataIndex] } }
+            },
+            scales: {
+              x: { ticks: { font: { size: 10, weight: 'bold' }, color: darkMode ? '#94a3b8' : '#64748b' } },
+              y: { beginAtZero: true, ticks: { color: darkMode ? '#94a3b8' : '#64748b' } }
+            }
+          }
+        });
+      };
+
+      // Mapa com Foco Dinâmico
+      useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+
+        if (!mapInstance.current) {
+          mapInstance.current = L.map('map').setView([-14.235, -51.925], 4);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 18
+          }).addTo(mapInstance.current);
+        }
+
+        mapInstance.current.eachLayer((layer) => {
+          if (layer instanceof L.CircleMarker) {
+            mapInstance.current.removeLayer(layer);
+          }
+        });
+
+        const ufMapData = filteredData.reduce((acc, curr) => {
+          const uf = curr.uf;
+          if (!acc[uf]) acc[uf] = { vagas: 0, matriculados: 0, qualificados: 0 };
+          acc[uf].vagas += curr.vagas;
+          acc[uf].matriculados += curr.matriculados;
+          acc[uf].qualificados += curr.qualificados;
+          return acc;
+        }, {});
+
+        const maxVagas = Math.max(...Object.values(ufMapData).map(d => d.vagas), 1);
+        const bounds = [];
+
+        Object.entries(ufMapData).forEach(([uf, info]) => {
+          const coords = UF_COORDINATES[uf];
+          if (coords && info.vagas > 0) {
+            bounds.push(coords);
+            const radius = Math.max(10, Math.min(35, (info.vagas / maxVagas) * 35));
+
+            const marker = L.circleMarker(coords, {
+              radius: radius,
+              fillColor: '#2563eb',
+              color: '#1d4ed8',
+              weight: 1.5,
+              opacity: 1,
+              fillOpacity: 0.6
+            }).addTo(mapInstance.current);
+
+            marker.bindPopup(`
+              <div class="p-1">
+                <h4 class="font-bold text-sm text-slate-800 border-b border-slate-200 pb-1 mb-2">Estado: ${uf}</h4>
+                <div class="text-xs space-y-1">
+                  <p class="text-blue-600 font-semibold">🔹 Vagas: <strong>${info.vagas.toLocaleString('pt-BR')}</strong></p>
+                  <p class="text-amber-600 font-semibold">🔸 Matriculados: <strong>${info.matriculados.toLocaleString('pt-BR')}</strong></p>
+                  <p class="text-emerald-600 font-semibold">🟢 Qualificados: <strong>${info.qualificados.toLocaleString('pt-BR')}</strong></p>
+                </div>
+              </div>
+            `);
+          }
+        });
+
+        if (bounds.length === 1) {
+          mapInstance.current.setView(bounds[0], 7);
+        } else if (bounds.length > 1) {
+          mapInstance.current.fitBounds(bounds, { padding: [30, 30] });
+        } else {
+          mapInstance.current.setView([-14.235, -51.925], 4);
+        }
+
+      }, [isAuthenticated, filteredData]);
+
+      useEffect(() => {
+        if (!isAuthenticated) return;
+        const palette = ['#2563eb', '#059669', '#d97706', '#9333ea', '#dc2626'];
+
+        if (activeTab === 'vagas') {
+          renderChartPair(pieVagasRef.current, barVagasRef.current, 'vagas', 'vagas', '#3b82f6', palette);
+        } else if (activeTab === 'matriculas') {
+          renderChartPair(pieMatriculasRef.current, barMatriculasRef.current, 'matriculados', 'matriculados', '#d97706', palette);
+        } else if (activeTab === 'qualificados') {
+          renderChartPair(pieQualificadosRef.current, barQualificadosRef.current, 'qualificados', 'qualificados', '#059669', palette);
+        }
+      }, [isAuthenticated, filteredData, activeTab, darkMode]);
+
+      const uniqueYears = useMemo(() => {
+        const years = Array.from(new Set(data.map(d => String(d.ano)).filter(Boolean)));
+        return years.sort((a, b) => {
+          if (a === 'S/A') return 1;
+          if (b === 'S/A') return -1;
+          return Number(b) - Number(a);
+        });
+      }, [data]);
+
+      const uniqueRegioes = useMemo(() => Array.from(new Set(data.map(d => d.regiao).filter(Boolean))).sort(), [data]);
+      const uniqueUfs = useMemo(() => Array.from(new Set(data.map(d => d.uf).filter(Boolean))).sort(), [data]);
+      const uniqueTipos = useMemo(() => Array.from(new Set(data.map(d => d.tipo).filter(Boolean))).sort(), [data]);
+      const uniqueFontes = useMemo(() => Array.from(new Set(data.map(d => d.fonte).filter(Boolean))).sort(), [data]);
+
+      const renderSortIcon = (key) => {
+        if (sortConfig.key !== key) return <span className="opacity-30 ml-1 no-print">↕</span>;
+        return <span className="ml-1 font-bold text-blue-600 no-print">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>;
+      };
+
+      // TELA DE LOGIN DE SEGURANÇA
+      if (!isAuthenticated) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-4">
+            <form onSubmit={handleLoginSubmit} className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-sm space-y-5">
+              <div className="text-center space-y-2">
+                <span className="p-3 bg-blue-600 text-white rounded-2xl inline-block shadow-lg">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                </span>
+                <h2 className="text-xl font-bold tracking-tight text-white">Acesso Restrito</h2>
+                <p className="text-xs text-slate-400">Qualificação do Turismo - Painel Analítico</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Senha de Acesso</label>
+                <input 
+                  type="password" 
+                  placeholder="Digite sua senha..." 
+                  value={inputPassword}
+                  onChange={e => setInputPassword(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {loginError && (
+                  <p className="text-xs text-rose-400 font-semibold mt-1">Senha incorreta. Tente novamente.</p>
+                )}
+              </div>
+
+              <button 
+                type="submit" 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md hover:shadow-lg"
+              >
+                Entrar no Painel
+              </button>
+            </form>
+          </div>
+        );
+      }
+
+      // CONTEÚDO PRINCIPAL DO PAINEL
+      return (
+        <div className="min-h-screen p-4 sm:p-6 max-w-[1600px] mx-auto">
+          {/* Cabeçalho */}
+          <header className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 print-break-inside-avoid">
+            <div className="flex items-center gap-3">
+              <span className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l9-5-9-5-9 5 9 5z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 01-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
+              </span>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">Qualificação do Turismo</h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  Painel Analítico de Indicadores e Metas Executadas {lastUpdated && `(Atualizado às ${lastUpdated})`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap no-print">
+              <button 
+                onClick={() => window.print()}
+                className="p-2.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm"
+              >
+                🖨️ Imprimir / PDF
+              </button>
+
+              <button 
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition text-xs font-semibold flex items-center gap-2"
+              >
+                {darkMode ? '☀️ Tema Claro' : '🌙 Tema Escuro'}
+              </button>
+
+              <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold text-xs transition cursor-pointer flex items-center gap-2 shadow-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                Carregar Planilha (.xlsx)
+                <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+              </label>
+
+              <button 
+                onClick={handleLogout}
+                className="p-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                🔒 Sair
+              </button>
+            </div>
+          </header>
+
+          {/* Filtros Avançados */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4 no-print">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Filtros de Pesquisa</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Exibindo <strong>{filteredData.length}</strong> de <strong>{data.length}</strong> registros
+                </span>
+                
+                <button 
+                  onClick={resetFilters}
+                  disabled={!isFilterActive}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition shadow-sm ${
+                    isFilterActive 
+                      ? 'bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900 cursor-pointer' 
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  Limpar Filtros
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Ano</label>
+                <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <option value="TODOS">Todos os Anos</option>
+                  {uniqueYears.map(ano => <option key={ano} value={ano}>{ano}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Região</label>
+                <select value={selectedRegiao} onChange={e => setSelectedRegiao(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <option value="TODOS">Todas as Regiões</option>
+                  {uniqueRegioes.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">UF (Estado)</label>
+                <select value={selectedUf} onChange={e => setSelectedUf(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <option value="TODOS">Todas as UFs</option>
+                  {uniqueUfs.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Tipo de Instituição</label>
+                <select value={selectedTipo} onChange={e => setSelectedTipo(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <option value="TODOS">Todos os Executores</option>
+                  {uniqueTipos.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Fonte de Recurso</label>
+                <select value={selectedFonte} onChange={e => setSelectedFonte(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <option value="TODOS">Todas as Fontes</option>
+                  {uniqueFontes.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Buscar por Texto</label>
+                <input 
+                  type="text" 
+                  placeholder="Parceiro, SEI, Cidade..." 
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* PAINEL DE CARDS (KPIs) */}
+          <div className="space-y-6 mb-8 print-break-inside-avoid">
+            {/* VAGAS */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50">
+              <h2 className="text-xs font-extrabold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span> Vagas Ofertadas por Ano
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div 
+                  onClick={() => setKpiFilter(kpiFilter === 'SEM_MATRICULA' ? 'TODOS' : 'SEM_MATRICULA')}
+                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                    kpiFilter === 'SEM_MATRICULA' 
+                      ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 ring-2 ring-blue-500' 
+                      : 'bg-white dark:bg-slate-800 border-blue-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">VAGAS (TOTAL)</p>
+                  <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{kpis.vagas.toLocaleString('pt-BR')}</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">{kpis.cursos.toLocaleString('pt-BR')} cursos</p>
+                </div>
+                {metricasPorAno.map(item => (
+                  <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <p className="text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold">Vagas {item.ano}</p>
+                    <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.vagas.toLocaleString('pt-BR')}</h3>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">{item.cursos.toLocaleString('pt-BR')} cursos</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* MATRICULADOS */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/50">
+              <h2 className="text-xs font-extrabold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Matriculados por Ano
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div 
+                  onClick={() => setKpiFilter(kpiFilter === 'COM_MATRICULA' ? 'TODOS' : 'COM_MATRICULA')}
+                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                    kpiFilter === 'COM_MATRICULA' 
+                      ? 'bg-amber-50 dark:bg-amber-900/40 border-amber-500 ring-2 ring-amber-500' 
+                      : 'bg-white dark:bg-slate-800 border-amber-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">MATRICULADOS (TOTAL)</p>
+                  <h3 className="text-xl font-extrabold text-amber-600 dark:text-amber-400 mt-1">{kpis.matriculados.toLocaleString('pt-BR')}</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">Preenchimento: <strong>{kpis.taxaPreenchimento}%</strong></p>
+                </div>
+                {metricasPorAno.map(item => (
+                  <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <p className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold">Matriculados {item.ano}</p>
+                    <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.matriculados.toLocaleString('pt-BR')}</h3>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                      Preenchimento: {item.vagas > 0 ? ((item.matriculados / item.vagas) * 100).toFixed(1) : '0.0'}%
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* QUALIFICADOS */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/50">
+              <h2 className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> Qualificados por Ano
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div 
+                  onClick={() => setKpiFilter(kpiFilter === 'COM_QUALIFICADO' ? 'TODOS' : 'COM_QUALIFICADO')}
+                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                    kpiFilter === 'COM_QUALIFICADO' 
+                      ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-500 ring-2 ring-emerald-500' 
+                      : 'bg-white dark:bg-slate-800 border-emerald-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">QUALIFICADOS (TOTAL)</p>
+                  <h3 className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">{kpis.qualificados.toLocaleString('pt-BR')}</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                    Conclusão: <strong className="text-emerald-600 dark:text-emerald-400">{kpis.taxaConclusao}%</strong> | Evasão: <strong className="text-rose-600 dark:text-rose-400">{kpis.taxaEvasao}%</strong>
+                  </p>
+                </div>
+                {metricasPorAno.map(item => {
+                  const taxaConclusao = item.matriculados > 0 ? ((item.qualificados / item.matriculados) * 100).toFixed(1) : '0.0';
+                  const taxaEvasao = item.matriculados > 0 ? (((item.matriculados - item.qualificados) / item.matriculados) * 100).toFixed(1) : '0.0';
+
+                  return (
+                    <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">Qualificados {item.ano}</p>
+                      <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.qualificados.toLocaleString('pt-BR')}</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                        Conclusão: <strong className="text-emerald-600 dark:text-emerald-400">{taxaConclusao}%</strong> | Evasão: <strong className="text-rose-600 dark:text-rose-400">{taxaEvasao}%</strong>
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* SEÇÃO DE GRÁFICOS */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 mb-8 print-break-inside-avoid">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4 mb-6 gap-4">
+              <h2 className="text-base font-bold text-slate-800 dark:text-white">Visualização Gráfica Interativa</h2>
+              <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-xl gap-1 flex-wrap no-print">
+                <button
+                  onClick={() => setActiveTab('evolucao')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'evolucao' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                >
+                  📈 Evolução Temporal
+                </button>
+                <button
+                  onClick={() => setActiveTab('vagas')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'vagas' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                >
+                  🔹 Vagas Ofertadas
+                </button>
+                <button
+                  onClick={() => setActiveTab('matriculas')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'matriculas' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                >
+                  🔸 Matriculados
+                </button>
+                <button
+                  onClick={() => setActiveTab('qualificados')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'qualificados' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                >
+                  🟢 Qualificados
+                </button>
+              </div>
+            </div>
+
+            {activeTab === 'evolucao' && (
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Trajetória Anual (Vagas vs. Matrículas vs. Qualificados)</h3>
+                <div className="h-64 relative">
+                  <canvas ref={lineTrendRef}></canvas>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'vagas' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Vagas por Tipo de Instituição</h3>
+                  <div className="h-56 relative"><canvas ref={pieVagasRef}></canvas></div>
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Vagas)</h3>
+                  <div className="h-56 relative"><canvas ref={barVagasRef}></canvas></div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'matriculas' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Matriculados por Tipo de Instituição</h3>
+                  <div className="h-56 relative"><canvas ref={pieMatriculasRef}></canvas></div>
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Matriculados)</h3>
+                  <div className="h-56 relative"><canvas ref={barMatriculasRef}></canvas></div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'qualificados' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Qualificados por Tipo de Instituição</h3>
+                  <div className="h-56 relative"><canvas ref={pieQualificadosRef}></canvas></div>
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Qualificados)</h3>
+                  <div className="h-56 relative"><canvas ref={barQualificadosRef}></canvas></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Mapa */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-8 print-break-inside-avoid">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                Distribuição Geográfica de Vagas por Estado (UF)
+              </h2>
+            </div>
+            <div id="map"></div>
+          </div>
+
+          {/* Tabela de Dados */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden print-break-inside-avoid">
+            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ações Cadastradas ({sortedData.length})</h2>
+              
+              <div className="flex items-center gap-2 no-print">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Itens por página:</span>
+                <select 
+                  value={itemsPerPage} 
+                  onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs p-1 font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+                <thead className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 uppercase font-semibold border-b border-slate-200 dark:border-slate-600 select-none">
+                  <tr>
+                    <th onClick={() => handleSort('ano')} className="p-2.5 cursor-pointer">
+                      Ano {renderSortIcon('ano')}
+                    </th>
+                    <th onClick={() => handleSort('regiao')} className="p-2.5 cursor-pointer">
+                      Região {renderSortIcon('regiao')}
+                    </th>
+                    <th onClick={() => handleSort('tipo')} className="p-2.5 cursor-pointer">
+                      Tipo {renderSortIcon('tipo')}
+                    </th>
+                    <th onClick={() => handleSort('parceiro')} className="p-2.5 cursor-pointer">
+                      Instituição Parceira {renderSortIcon('parceiro')}
+                    </th>
+                    <th className="p-2.5">Instrumento</th>
+                    <th className="p-2.5">Nº SEI</th>
+                    <th onClick={() => handleSort('uf')} className="p-2.5 cursor-pointer">
+                      UF / Cidade {renderSortIcon('uf')}
+                    </th>
+                    <th onClick={() => handleSort('cursos')} className="p-2.5 text-right cursor-pointer">
+                      Cursos {renderSortIcon('cursos')}
+                    </th>
+                    <th onClick={() => handleSort('vagas')} className="p-2.5 text-right cursor-pointer">
+                      Vagas {renderSortIcon('vagas')}
+                    </th>
+                    <th onClick={() => handleSort('matriculados')} className="p-2.5 text-right cursor-pointer">
+                      Matrículas {renderSortIcon('matriculados')}
+                    </th>
+                    <th onClick={() => handleSort('qualificados')} className="p-2.5 text-right cursor-pointer">
+                      Qualificados {renderSortIcon('qualificados')}
+                    </th>
+                    <th onClick={() => handleSort('taxaConclusao')} className="p-2.5 text-center cursor-pointer min-w-[120px]">
+                      Taxa Conclusão {renderSortIcon('taxaConclusao')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {paginatedData.length > 0 ? (
+                    paginatedData.map((row, idx) => {
+                      const temMatriculas = row.matriculados > 0;
+                      const pctConclusao = temMatriculas 
+                        ? Math.round((row.qualificados / row.matriculados) * 100) 
+                        : 0;
+
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                          <td className="p-2.5 font-bold text-slate-800 dark:text-white">{row.ano || '-'}</td>
+                          <td className="p-2.5 font-semibold text-slate-700 dark:text-slate-200">{row.regiao || '-'}</td>
+                          <td className="p-2.5 text-slate-600 dark:text-slate-300 font-medium">{row.tipo || '-'}</td>
+                          <td className="p-2.5">
+                            <div className="font-semibold text-slate-800 dark:text-slate-100">{row.parceiro || '-'}</div>
+                            {row.fonte && (
+                              <span className="inline-block text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded px-1">
+                                Fonte: {row.fonte}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-500 dark:text-slate-400 text-[10px]">{row.instrumento || '-'}</td>
+                          <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300 text-[10px] font-medium">{row.sei || '-'}</td>
+                          <td className="p-2.5 font-medium text-slate-700 dark:text-slate-200">
+                            <span className="font-bold text-blue-600 dark:text-blue-400 mr-1">{row.uf || '-'}</span> {row.cidade ? `- ${row.cidade}` : ''}
+                          </td>
+                          <td className="p-2.5 text-right font-medium">{row.cursos || 0}</td>
+                          <td className="p-2.5 text-right font-semibold text-slate-800 dark:text-white">{row.vagas.toLocaleString('pt-BR')}</td>
+                          <td className="p-2.5 text-right text-amber-600 dark:text-amber-400 font-semibold">{row.matriculados.toLocaleString('pt-BR')}</td>
+                          <td className="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold">{row.qualificados.toLocaleString('pt-BR')}</td>
+                          <td className="p-2.5">
+                            {temMatriculas ? (
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden no-print">
+                                  <div 
+                                    className={`h-1.5 rounded-full ${pctConclusao > 75 ? 'bg-emerald-500' : pctConclusao > 40 ? 'bg-amber-500' : 'bg-blue-500'}`} 
+                                    style={{ width: `${pctConclusao}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 w-full text-center">{pctConclusao}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-medium text-slate-400 block text-center">N/A (0 mat.)</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan="12" className="p-6 text-center text-slate-400 font-medium">Nenhum registro encontrado com os filtros selecionados.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Controles da Paginação */}
+            {sortedData.length > 0 && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs no-print">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">
+                  Mostrando <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> a <strong>{Math.min(currentPage * itemsPerPage, sortedData.length)}</strong> de <strong>{sortedData.length}</strong> itens
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition"
+                  >
+                    Anterior
+                  </button>
+
+                  <span className="font-semibold text-slate-700 dark:text-slate-200 px-2">
+                    Página {currentPage} de {totalPages}
+                  </span>
+
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition"
+                  >
+                    Próximo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
