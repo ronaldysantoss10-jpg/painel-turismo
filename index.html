@@ -113,11 +113,11 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // COLE AQUI SEU LINK DO GOOGLE DRIVE OU SHAREPOINT
-    const https://docs.google.com/spreadsheets/d/1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw/edit?usp=sharing&ouid=114750690809973639853&rtpof=true&sd=true = "";
+    // SEU LINK DO GOOGLE DRIVE JÁ CONFIGURADO
+    const PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw/edit?usp=sharing";
     
     // SENHA DE ACESSO AO PAINEL
-    const PAINEL_PASSWORD = "CGQT123";
+    const PAINEL_PASSWORD = "CGQT";
 
     const UF_COORDINATES = {
       AC: [-8.77, -70.55], AL: [-9.57, -36.78], AM: [-3.07, -61.66], AP: [1.41, -51.77],
@@ -249,8 +249,10 @@
       };
 
       const processSheetData = (rawJson, name) => {
+        if (!Array.isArray(rawJson) || rawJson.length === 0) return;
+
         const parsedData = rawJson.map(row => {
-          let parceiroOriginal = row['Instituições Parceiras'] || '';
+          let parceiroOriginal = row['Instituições Parceiras'] || row['Parceiro'] || '';
           if (/SENAC/i.test(parceiroOriginal)) {
             parceiroOriginal = parceiroOriginal.replace(/\/ ?CNC/i, '').trim();
           }
@@ -267,15 +269,15 @@
           let regiao = row['Região'] ? String(row['Região']).trim() : (UF_TO_REGION[uf] || 'Outros');
 
           return {
-            tipo: row['Tipo de Instituição'] || '',
+            tipo: row['Tipo de Instituição'] || row['Tipo'] || '',
             parceiro: parceiroOriginal,
             ano: parsedAno,
             instrumento: (row['Instrumento'] || '').toString().replace('\xa0', ' '),
-            sei: row['Nº SEI'] || '',
-            fonte: row['Fonte de Recurso'] || '',
+            sei: row['Nº SEI'] || row['SEI'] || '',
+            fonte: row['Fonte de Recurso'] || row['Fonte'] || '',
             regiao: regiao,
             uf: uf,
-            cidade: row['Cidade Sede'] || '',
+            cidade: row['Cidade Sede'] || row['Cidade'] || '',
             local: row['Local de Realização'] || '',
             cursos: Number(row['Cursos']) || 0,
             vagas: Number(row[' Vagas']) || Number(row['Vagas']) || 0,
@@ -291,24 +293,16 @@
         setLastUpdated(horaAtual);
       };
 
-      // Converter links do Google Drive para link direto de download
-      const getDirectUrl = (url) => {
-        if (!url) return '';
-        if (url.includes('drive.google.com')) {
-          const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-          if (match && match[1]) {
-            return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
-          }
-        }
-        return url;
-      };
-
       useEffect(() => {
         const timeStamp = new Date().getTime();
 
         if (PLANILHA_URL && PLANILHA_URL.length > 5) {
-          const targetUrl = getDirectUrl(PLANILHA_URL);
-          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(targetUrl + (targetUrl.includes('?') ? '&' : '?') + "v=" + timeStamp);
+          // Extrai o ID do Google Drive e cria o link de exportação do Google Docs
+          const match = PLANILHA_URL.match(/\/d\/([a-zA-Z0-9_-]+)/);
+          const fileId = match ? match[1] : '1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw';
+          const targetUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx`;
+          
+          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(targetUrl + "&v=" + timeStamp);
 
           fetch(PROXY_URL)
             .then(res => {
@@ -317,41 +311,15 @@
             })
             .then(buffer => {
               const wb = XLSX.read(buffer, { type: 'array' });
-              if (wb.SheetNames.includes('Geral')) {
-                const ws = wb.Sheets['Geral'];
+              const sheetName = wb.SheetNames.includes('Geral') ? 'Geral' : wb.SheetNames[0];
+              if (sheetName) {
+                const ws = wb.Sheets[sheetName];
                 const rawJson = XLSX.utils.sheet_to_json(ws);
-                processSheetData(rawJson, 'Sincronizado Nuvem');
-              } else if (wb.SheetNames.length > 0) {
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const rawJson = XLSX.utils.sheet_to_json(ws);
-                processSheetData(rawJson, 'Sincronizado Nuvem');
+                processSheetData(rawJson, 'Google Drive Sincronizado');
               }
             })
-            .catch(err => console.log('Falha na sincronização online, tentando local...', err));
+            .catch(err => console.log('Falha na sincronização online, mantendo base padrão...', err));
         }
-
-        function tryLoadFile(targetName) {
-          return fetch('./' + targetName + '?v=' + timeStamp, { cache: 'no-store' })
-            .then(res => {
-              if (!res.ok) throw new Error('Não encontrado');
-              return res.arrayBuffer();
-            })
-            .then(buffer => {
-              const wb = XLSX.read(buffer, { type: 'array' });
-              if (wb.SheetNames.includes('Geral')) {
-                const ws = wb.Sheets['Geral'];
-                const rawJson = XLSX.utils.sheet_to_json(ws);
-                processSheetData(rawJson, targetName);
-                return true;
-              }
-              return false;
-            });
-        }
-
-        tryLoadFile('Relatorio_Geral.xlsx')
-          .catch(() => tryLoadFile('Relatorio_Geral.xlsx.xlsx'))
-          .catch(() => tryLoadFile('Relatório_Geral.xlsx'))
-          .catch(err => console.log('Carregando base inicial padrão'));
       }, []);
 
       const handleFileUpload = (e) => {
