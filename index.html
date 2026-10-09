@@ -113,9 +113,6 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // SEU LINK DO GOOGLE DRIVE JÁ CONFIGURADO
-    const PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw/edit?usp=sharing";
-    
     // SENHA DE ACESSO AO PAINEL
     const PAINEL_PASSWORD = "CGQT";
 
@@ -296,17 +293,10 @@
       useEffect(() => {
         const timeStamp = new Date().getTime();
 
-        if (PLANILHA_URL && PLANILHA_URL.length > 5) {
-          // Extrai o ID do Google Drive e cria o link de exportação do Google Docs
-          const match = PLANILHA_URL.match(/\/d\/([a-zA-Z0-9_-]+)/);
-          const fileId = match ? match[1] : '1F20MwbZwqSxHxe0bKTVD8svXFoRPAgQw';
-          const targetUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx`;
-          
-          const PROXY_URL = "https://corsproxy.io/?" + encodeURIComponent(targetUrl + "&v=" + timeStamp);
-
-          fetch(PROXY_URL)
+        function tryLoadFile(targetName) {
+          return fetch('./' + targetName + '?v=' + timeStamp, { cache: 'no-store' })
             .then(res => {
-              if (!res.ok) throw new Error('Falha no download via Proxy');
+              if (!res.ok) throw new Error('Não encontrado');
               return res.arrayBuffer();
             })
             .then(buffer => {
@@ -315,11 +305,17 @@
               if (sheetName) {
                 const ws = wb.Sheets[sheetName];
                 const rawJson = XLSX.utils.sheet_to_json(ws);
-                processSheetData(rawJson, 'Google Drive Sincronizado');
+                processSheetData(rawJson, targetName);
+                return true;
               }
-            })
-            .catch(err => console.log('Falha na sincronização online, mantendo base padrão...', err));
+              return false;
+            });
         }
+
+        tryLoadFile('Relatorio_Geral.xlsx')
+          .catch(() => tryLoadFile('Relatorio_Geral.xlsx.xlsx'))
+          .catch(() => tryLoadFile('Relatório_Geral.xlsx'))
+          .catch(err => console.log('Carregando base inicial padrão'));
       }, []);
 
       const handleFileUpload = (e) => {
