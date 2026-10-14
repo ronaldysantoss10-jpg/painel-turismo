@@ -46,6 +46,18 @@
       z-index: 1;
     }
 
+    /* Estilização para barra de rolagem dos cards de KPI */
+    .kpi-scroll::-webkit-scrollbar {
+      height: 6px;
+    }
+    .kpi-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .kpi-scroll::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 9999px;
+    }
+
     @media print {
       @page {
         size: A4 landscape;
@@ -162,6 +174,16 @@
       return name;
     }
 
+    // Normalizador de chaves do Excel
+    function getNormalizedValue(row, possibleKeys) {
+      const rowKeys = Object.keys(row);
+      for (let pKey of possibleKeys) {
+        const foundKey = rowKeys.find(k => k.trim().toLowerCase() === pKey.trim().toLowerCase());
+        if (foundKey && row[foundKey] !== undefined) return row[foundKey];
+      }
+      return '';
+    }
+
     function App() {
       const [isAuthenticated, setIsAuthenticated] = useState(() => {
         return localStorage.getItem('painel_authenticated') === 'true';
@@ -172,6 +194,7 @@
       const [data, setData] = useState(INITIAL_GERAL_DATA);
       const [fileName, setFileName] = useState('');
       const [lastUpdated, setLastUpdated] = useState('');
+      const [isLoading, setIsLoading] = useState(false);
       
       const [darkMode, setDarkMode] = useState(false);
 
@@ -249,37 +272,38 @@
         if (!Array.isArray(rawJson) || rawJson.length === 0) return;
 
         const parsedData = rawJson.map(row => {
-          let parceiroOriginal = row['Instituições Parceiras'] || row['Parceiro'] || '';
+          let parceiroOriginal = getNormalizedValue(row, ['Instituições Parceiras', 'Parceiro', 'Instituição']);
           if (/SENAC/i.test(parceiroOriginal)) {
             parceiroOriginal = parceiroOriginal.replace(/\/ ?CNC/i, '').trim();
           }
 
-          let rawAno = row['Ano'];
+          let rawAno = getNormalizedValue(row, ['Ano']);
           let parsedAno = 'S/A';
-          if (rawAno !== undefined && rawAno !== null) {
+          if (rawAno !== undefined && rawAno !== null && rawAno !== '') {
             let anoStr = String(rawAno).trim();
             let match = anoStr.match(/\d{4}/);
             if (match) parsedAno = match[0];
           }
 
-          let uf = (row['UF'] || '').toString().trim().toUpperCase();
-          let regiao = row['Região'] ? String(row['Região']).trim() : (UF_TO_REGION[uf] || 'Outros');
+          let uf = String(getNormalizedValue(row, ['UF']) || '').trim().toUpperCase();
+          let rawRegiao = getNormalizedValue(row, ['Região', 'Regiao']);
+          let regiao = rawRegiao ? String(rawRegiao).trim() : (UF_TO_REGION[uf] || 'Outros');
 
           return {
-            tipo: row['Tipo de Instituição'] || row['Tipo'] || '',
-            parceiro: parceiroOriginal,
+            tipo: String(getNormalizedValue(row, ['Tipo de Instituição', 'Tipo']) || ''),
+            parceiro: String(parceiroOriginal || ''),
             ano: parsedAno,
-            instrumento: (row['Instrumento'] || '').toString().replace('\xa0', ' '),
-            sei: row['Nº SEI'] || row['SEI'] || '',
-            fonte: row['Fonte de Recurso'] || row['Fonte'] || '',
+            instrumento: String(getNormalizedValue(row, ['Instrumento']) || '').replace('\xa0', ' '),
+            sei: String(getNormalizedValue(row, ['Nº SEI', 'SEI', 'Processo SEI']) || ''),
+            fonte: String(getNormalizedValue(row, ['Fonte de Recurso', 'Fonte']) || ''),
             regiao: regiao,
             uf: uf,
-            cidade: row['Cidade Sede'] || row['Cidade'] || '',
-            local: row['Local de Realização'] || '',
-            cursos: Number(row['Cursos']) || 0,
-            vagas: Number(row[' Vagas']) || Number(row['Vagas']) || 0,
-            matriculados: Number(row['Matriculados']) || 0,
-            qualificados: Number(row['Qualificados']) || 0,
+            cidade: String(getNormalizedValue(row, ['Cidade Sede', 'Cidade', 'Município']) || ''),
+            local: String(getNormalizedValue(row, ['Local de Realização', 'Local']) || ''),
+            cursos: Number(getNormalizedValue(row, ['Cursos'])) || 0,
+            vagas: Number(getNormalizedValue(row, ['Vagas', 'Vagas Ofertadas'])) || 0,
+            matriculados: Number(getNormalizedValue(row, ['Matriculados', 'Matrículas'])) || 0,
+            qualificados: Number(getNormalizedValue(row, ['Qualificados', 'Formados'])) || 0,
           };
         });
 
@@ -292,6 +316,7 @@
 
       useEffect(() => {
         const timeStamp = new Date().getTime();
+        setIsLoading(true);
 
         function tryLoadFile(targetName) {
           return fetch('./' + targetName + '?v=' + timeStamp, { cache: 'no-store' })
@@ -315,13 +340,15 @@
         tryLoadFile('Relatorio_Geral.xlsx')
           .catch(() => tryLoadFile('Relatorio_Geral.xlsx.xlsx'))
           .catch(() => tryLoadFile('Relatório_Geral.xlsx'))
-          .catch(err => console.log('Carregando base inicial padrão'));
+          .catch(err => console.log('Carregando base inicial padrão'))
+          .finally(() => setIsLoading(false));
       }, []);
 
       const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        setIsLoading(true);
         const reader = new FileReader();
         reader.onload = (evt) => {
           try {
@@ -335,7 +362,9 @@
 
           } catch (error) {
             console.error("Erro ao ler arquivo:", error);
-            alert("Erro ao processar a planilha.");
+            alert("Erro ao processar a planilha. Verifique o formato do arquivo.");
+          } finally {
+            setIsLoading(false);
           }
         };
         reader.readAsBinaryString(file);
@@ -397,6 +426,38 @@
           key,
           direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
         }));
+      };
+
+      // Exportação em Excel dos Dados Filtrados
+      const exportToExcel = () => {
+        if (sortedData.length === 0) {
+          alert('Não há dados disponíveis para exportar.');
+          return;
+        }
+
+        const exportRows = sortedData.map(item => ({
+          'Ano': item.ano,
+          'Região': item.regiao,
+          'UF': item.uf,
+          'Cidade Sede': item.cidade,
+          'Tipo de Instituição': item.tipo,
+          'Instituição Parceira': item.parceiro,
+          'Fonte de Recurso': item.fonte,
+          'Instrumento': item.instrumento,
+          'Nº SEI': item.sei,
+          'Cursos': item.cursos,
+          'Vagas Ofertadas': item.vagas,
+          'Matriculados': item.matriculados,
+          'Qualificados': item.qualificados,
+          'Taxa Conclusão (%)': item.matriculados > 0 ? ((item.qualificados / item.matriculados) * 100).toFixed(1) + '%' : '0.0%'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Relatório Filtrado");
+        
+        const dataAtual = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `Relatorio_Turismo_Filtrado_${dataAtual}.xlsx`);
       };
 
       const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
@@ -716,7 +777,7 @@
 
               <button 
                 type="submit" 
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md hover:shadow-lg"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-md hover:shadow-lg cursor-pointer"
               >
                 Entrar no Painel
               </button>
@@ -727,7 +788,21 @@
 
       // CONTEÚDO PRINCIPAL DO PAINEL
       return (
-        <div className="min-h-screen p-4 sm:p-6 max-w-[1600px] mx-auto">
+        <div className="min-h-screen p-4 sm:p-6 max-w-[1600px] mx-auto relative">
+          
+          {/* OVERLAY DE LOADING */}
+          {isLoading && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center">
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-200 dark:border-slate-700">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">Processando dados...</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Aguarde o carregamento da planilha.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cabeçalho */}
           <header className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 print-break-inside-avoid">
             <div className="flex items-center gap-3">
@@ -744,15 +819,23 @@
 
             <div className="flex items-center gap-3 flex-wrap no-print">
               <button 
+                onClick={exportToExcel}
+                className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+                title="Exportar registros filtrados em Excel"
+              >
+                📥 Exportar Excel
+              </button>
+
+              <button 
                 onClick={() => window.print()}
-                className="p-2.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm"
+                className="p-2.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
               >
                 🖨️ Imprimir / PDF
               </button>
 
               <button 
                 onClick={() => setDarkMode(!darkMode)}
-                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition text-xs font-semibold flex items-center gap-2"
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition text-xs font-semibold flex items-center gap-2 cursor-pointer"
               >
                 {darkMode ? '☀️ Tema Claro' : '🌙 Tema Escuro'}
               </button>
@@ -856,17 +939,17 @@
             </div>
           </div>
 
-          {/* PAINEL DE CARDS (KPIs) */}
+          {/* PAINEL DE CARDS (KPIs - COM ROLAGEM OTIMIZADA) */}
           <div className="space-y-6 mb-8 print-break-inside-avoid">
             {/* VAGAS */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50">
               <h2 className="text-xs font-extrabold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span> Vagas Ofertadas por Ano
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="flex overflow-x-auto gap-3 pb-2 kpi-scroll">
                 <div 
                   onClick={() => setKpiFilter(kpiFilter === 'SEM_MATRICULA' ? 'TODOS' : 'SEM_MATRICULA')}
-                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                  className={`min-w-[160px] flex-1 p-3 rounded-xl border shadow-sm cursor-pointer transition ${
                     kpiFilter === 'SEM_MATRICULA' 
                       ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 ring-2 ring-blue-500' 
                       : 'bg-white dark:bg-slate-800 border-blue-200 dark:border-slate-700'
@@ -877,7 +960,7 @@
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">{kpis.cursos.toLocaleString('pt-BR')} cursos</p>
                 </div>
                 {metricasPorAno.map(item => (
-                  <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div key={item.ano} className="min-w-[150px] flex-1 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <p className="text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold">Vagas {item.ano}</p>
                     <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.vagas.toLocaleString('pt-BR')}</h3>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">{item.cursos.toLocaleString('pt-BR')} cursos</p>
@@ -891,10 +974,10 @@
               <h2 className="text-xs font-extrabold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Matriculados por Ano
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="flex overflow-x-auto gap-3 pb-2 kpi-scroll">
                 <div 
                   onClick={() => setKpiFilter(kpiFilter === 'COM_MATRICULA' ? 'TODOS' : 'COM_MATRICULA')}
-                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                  className={`min-w-[160px] flex-1 p-3 rounded-xl border shadow-sm cursor-pointer transition ${
                     kpiFilter === 'COM_MATRICULA' 
                       ? 'bg-amber-50 dark:bg-amber-900/40 border-amber-500 ring-2 ring-amber-500' 
                       : 'bg-white dark:bg-slate-800 border-amber-200 dark:border-slate-700'
@@ -905,7 +988,7 @@
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">Preenchimento: <strong>{kpis.taxaPreenchimento}%</strong></p>
                 </div>
                 {metricasPorAno.map(item => (
-                  <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div key={item.ano} className="min-w-[150px] flex-1 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <p className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold">Matriculados {item.ano}</p>
                     <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.matriculados.toLocaleString('pt-BR')}</h3>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
@@ -921,10 +1004,10 @@
               <h2 className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> Qualificados por Ano
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="flex overflow-x-auto gap-3 pb-2 kpi-scroll">
                 <div 
                   onClick={() => setKpiFilter(kpiFilter === 'COM_QUALIFICADO' ? 'TODOS' : 'COM_QUALIFICADO')}
-                  className={`p-3 rounded-xl border shadow-sm cursor-pointer ${
+                  className={`min-w-[180px] flex-1 p-3 rounded-xl border shadow-sm cursor-pointer transition ${
                     kpiFilter === 'COM_QUALIFICADO' 
                       ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-500 ring-2 ring-emerald-500' 
                       : 'bg-white dark:bg-slate-800 border-emerald-200 dark:border-slate-700'
@@ -941,7 +1024,7 @@
                   const taxaEvasao = item.matriculados > 0 ? (((item.matriculados - item.qualificados) / item.matriculados) * 100).toFixed(1) : '0.0';
 
                   return (
-                    <div key={item.ano} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <div key={item.ano} className="min-w-[160px] flex-1 bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                       <p className="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">Qualificados {item.ano}</p>
                       <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mt-1">{item.qualificados.toLocaleString('pt-BR')}</h3>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
@@ -961,25 +1044,25 @@
               <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-xl gap-1 flex-wrap no-print">
                 <button
                   onClick={() => setActiveTab('evolucao')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'evolucao' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'evolucao' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
                 >
                   📈 Evolução Temporal
                 </button>
                 <button
                   onClick={() => setActiveTab('vagas')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'vagas' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'vagas' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
                 >
                   🔹 Vagas Ofertadas
                 </button>
                 <button
                   onClick={() => setActiveTab('matriculas')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'matriculas' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'matriculas' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
                 >
                   🔸 Matriculados
                 </button>
                 <button
                   onClick={() => setActiveTab('qualificados')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'qualificados' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'qualificados' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
                 >
                   🟢 Qualificados
                 </button>
@@ -1172,7 +1255,7 @@
                   <button
                     onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition"
+                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition cursor-pointer"
                   >
                     Anterior
                   </button>
@@ -1184,7 +1267,7 @@
                   <button
                     onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition"
+                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition cursor-pointer"
                   >
                     Próximo
                   </button>
