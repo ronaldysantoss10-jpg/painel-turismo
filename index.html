@@ -206,7 +206,7 @@
       const [searchTerm, setSearchTerm] = useState('');
       const [kpiFilter, setKpiFilter] = useState('TODOS');
 
-      // Seleção Interativa para Comparativo YoY
+      // Seleção Interativa para Comparativo YoY (Fixado estritamente em 2 anos)
       const [yoySelectedYears, setYoySelectedYears] = useState(['2024', '2025']);
 
       // Tabela
@@ -540,29 +540,28 @@
           .sort((a, b) => Number(a) - Number(b));
       }, [metricasPorAno]);
 
-      // Alterna seleção dos anos no comparativo interativo
+      // Alterna seleção dos anos no comparativo interativo (RESTRINGIDO ESTRITAMENTE A 2 ANOS)
       const toggleYoyYear = (ano) => {
         setYoySelectedYears(prev => {
           if (prev.includes(ano)) {
-            if (prev.length <= 2) return prev; // Mantém no mínimo 2 anos selecionados
+            // Se já estiver selecionado e tentar desmarcar, não permite ficar com menos de 2
+            if (prev.length <= 2) return prev;
             return prev.filter(a => a !== ano);
           } else {
-            if (prev.length >= 3) {
-              const [first, ...rest] = prev;
-              return [...rest, ano].sort((a, b) => Number(a) - Number(b));
-            }
-            return [...prev, ano].sort((a, b) => Number(a) - Number(b));
+            // Se já tiver 2 selecionados, remove o ano mais antigo e adiciona o novo
+            const newSelection = [prev[1], ano].sort((a, b) => Number(a) - Number(b));
+            return newSelection;
           }
         });
       };
 
-      // Cálculo Dinâmico do Comparativo YoY Interativo
+      // Cálculo Dinâmico do Comparativo YoY Interativo para EXATAMENTE 2 Anos
       const yoyInteractiveData = useMemo(() => {
-        if (yoySelectedYears.length < 2) return null;
+        if (yoySelectedYears.length !== 2) return null;
 
         const sortedYears = [...yoySelectedYears].sort((a, b) => Number(a) - Number(b));
         const firstYear = sortedYears[0];
-        const lastYear = sortedYears[sortedYears.length - 1];
+        const lastYear = sortedYears[1];
 
         const getMetricsForYear = (yStr) => {
           const found = metricasPorAno.find(m => m.ano === yStr);
@@ -579,16 +578,13 @@
         };
 
         return {
-          years: sortedYears,
           firstYear,
           lastYear,
+          firstData,
+          lastData,
           vagasDiff: calcPercent(lastData.vagas, firstData.vagas),
           matriculasDiff: calcPercent(lastData.matriculados, firstData.matriculados),
           qualificadosDiff: calcPercent(lastData.qualificados, firstData.qualificados),
-          yearMetrics: sortedYears.map(y => ({
-            ano: y,
-            ...getMetricsForYear(y)
-          }))
         };
       }, [yoySelectedYears, metricasPorAno]);
 
@@ -1030,25 +1026,22 @@
             </div>
           )}
 
-          {/* PAINEL DE COMPARATIVO HISTÓRICO INTERATIVO (Tema adaptativo claro e escuro) */}
+          {/* PAINEL DE COMPARATIVO HISTÓRICO INTERATIVO (2 Anos Selecionados e Alinhados) */}
           {yoyInteractiveData && (
             <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
-                      Comparativo Interativo
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Selecione 2 ou 3 anos para comparar</span>
-                  </div>
-                  <h3 className="text-base font-bold mt-1 text-slate-800 dark:text-white">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800">
+                    Comparativo YoY (2 Anos)
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">
                     Variação Percentual ({yoyInteractiveData.firstYear} vs. {yoyInteractiveData.lastYear})
                   </h3>
                 </div>
 
-                {/* Seleção Interativa de Anos (Chips) */}
+                {/* Seleção Interativa de Exatamente 2 Anos */}
                 <div className="flex items-center gap-2 flex-wrap no-print">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Anos:</span>
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Selecione 2 anos:</span>
                   {availableYearsForYoY.map(ano => {
                     const isSelected = yoySelectedYears.includes(ano);
                     return (
@@ -1068,59 +1061,65 @@
                 </div>
               </div>
 
-              {/* Cards de Métricas Comparativas */}
+              {/* Cards de Métricas Comparativas Alinhados para 2 Anos */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* VAGAS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80">
-                  <div className="flex justify-between items-center mb-2">
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
                     <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Vagas Ofertadas</span>
                     <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.vagasDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
                       {Number(yoyInteractiveData.vagasDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.vagasDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
-                    {yoyInteractiveData.yearMetrics.map(ym => (
-                      <div key={ym.ano} className="text-center">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{ym.ano}</span>
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{ym.vagas.toLocaleString('pt-BR')}</span>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
+                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.vagas.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="text-center pl-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
+                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{yoyInteractiveData.lastData.vagas.toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* MATRÍCULAS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80">
-                  <div className="flex justify-between items-center mb-2">
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
                     <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Matrículas</span>
                     <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.matriculasDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
                       {Number(yoyInteractiveData.matriculasDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.matriculasDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
-                    {yoyInteractiveData.yearMetrics.map(ym => (
-                      <div key={ym.ano} className="text-center">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{ym.ano}</span>
-                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{ym.matriculados.toLocaleString('pt-BR')}</span>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
+                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.matriculados.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="text-center pl-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
+                      <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{yoyInteractiveData.lastData.matriculados.toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* QUALIFICADOS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80">
-                  <div className="flex justify-between items-center mb-2">
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
                     <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Qualificados</span>
                     <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.qualificadosDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
                       {Number(yoyInteractiveData.qualificadosDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.qualificadosDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
-                    {yoyInteractiveData.yearMetrics.map(ym => (
-                      <div key={ym.ano} className="text-center">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{ym.ano}</span>
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{ym.qualificados.toLocaleString('pt-BR')}</span>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
+                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.qualificados.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="text-center pl-2">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
+                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{yoyInteractiveData.lastData.qualificados.toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
                 </div>
               </div>
