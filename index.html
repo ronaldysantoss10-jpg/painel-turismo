@@ -174,12 +174,12 @@
       return name;
     }
 
-    // Normalizador de chaves do Excel
     function getNormalizedValue(row, possibleKeys) {
+      if (!row) return '';
       const rowKeys = Object.keys(row);
       for (let pKey of possibleKeys) {
         const foundKey = rowKeys.find(k => k.trim().toLowerCase() === pKey.trim().toLowerCase());
-        if (foundKey && row[foundKey] !== undefined) return row[foundKey];
+        if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) return row[foundKey];
       }
       return '';
     }
@@ -198,28 +198,23 @@
       
       const [darkMode, setDarkMode] = useState(false);
 
-      // Filtros Gerais
+      // Filtros
       const [selectedYear, setSelectedYear] = useState('TODOS');
       const [selectedRegiao, setSelectedRegiao] = useState('TODOS');
       const [selectedUf, setSelectedUf] = useState('TODOS');
       const [selectedTipo, setSelectedTipo] = useState('TODOS');
       const [selectedFonte, setSelectedFonte] = useState('TODOS');
       const [searchTerm, setSearchTerm] = useState('');
-
-      // Filtro Rápido
       const [kpiFilter, setKpiFilter] = useState('TODOS');
 
-      // Ordenação da Tabela
+      // Tabela
       const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-
-      // Paginação
       const [currentPage, setCurrentPage] = useState(1);
       const [itemsPerPage, setItemsPerPage] = useState(10);
 
-      // Aba Ativa de Gráficos
+      // Gráficos
       const [activeTab, setActiveTab] = useState('evolucao');
 
-      // Refs
       const lineTrendRef = useRef(null);
       const pieVagasRef = useRef(null);
       const barVagasRef = useRef(null);
@@ -274,7 +269,7 @@
         const parsedData = rawJson.map(row => {
           let parceiroOriginal = getNormalizedValue(row, ['Instituições Parceiras', 'Parceiro', 'Instituição']);
           if (/SENAC/i.test(parceiroOriginal)) {
-            parceiroOriginal = parceiroOriginal.replace(/\/ ?CNC/i, '').trim();
+            parceiroOriginal = String(parceiroOriginal).replace(/\/ ?CNC/i, '').trim();
           }
 
           let rawAno = getNormalizedValue(row, ['Ano']);
@@ -293,7 +288,7 @@
             tipo: String(getNormalizedValue(row, ['Tipo de Instituição', 'Tipo']) || ''),
             parceiro: String(parceiroOriginal || ''),
             ano: parsedAno,
-            instrumento: String(getNormalizedValue(row, ['Instrumento']) || '').replace('\xa0', ' '),
+            instrumento: String(getNormalizedValue(row, ['Instrumento']) || '').replace(/\xa0/g, ' '),
             sei: String(getNormalizedValue(row, ['Nº SEI', 'SEI', 'Processo SEI']) || ''),
             fonte: String(getNormalizedValue(row, ['Fonte de Recurso', 'Fonte']) || ''),
             regiao: regiao,
@@ -340,7 +335,7 @@
         tryLoadFile('Relatorio_Geral.xlsx')
           .catch(() => tryLoadFile('Relatorio_Geral.xlsx.xlsx'))
           .catch(() => tryLoadFile('Relatório_Geral.xlsx'))
-          .catch(err => console.log('Carregando base inicial padrão'))
+          .catch(() => {})
           .finally(() => setIsLoading(false));
       }, []);
 
@@ -354,15 +349,13 @@
           try {
             const bstr = evt.target.result;
             const wb = XLSX.read(bstr, { type: 'binary' });
-
             const sheetName = wb.SheetNames.includes('Geral') ? 'Geral' : wb.SheetNames[0];
             const ws = wb.Sheets[sheetName];
             const rawJson = XLSX.utils.sheet_to_json(ws);
             processSheetData(rawJson, file.name);
-
           } catch (error) {
-            console.error("Erro ao ler arquivo:", error);
-            alert("Erro ao processar a planilha. Verifique o formato do arquivo.");
+            console.error("Erro ao ler ficheiro:", error);
+            alert("Erro ao processar a planilha. Verifique o formato do ficheiro.");
           } finally {
             setIsLoading(false);
           }
@@ -428,7 +421,6 @@
         }));
       };
 
-      // Exportação em Excel dos Dados Filtrados
       const exportToExcel = () => {
         if (sortedData.length === 0) {
           alert('Não há dados disponíveis para exportar.');
@@ -527,7 +519,9 @@
         if (!isAuthenticated) return;
 
         if (activeTab === 'evolucao' && lineTrendRef.current) {
-          if (chartInstances.current['line_trend']) chartInstances.current['line_trend'].destroy();
+          if (chartInstances.current['line_trend']) {
+            chartInstances.current['line_trend'].destroy();
+          }
 
           const labels = metricasPorAno.map(item => item.ano);
           const vagasData = metricasPorAno.map(item => item.vagas);
@@ -645,7 +639,6 @@
         });
       };
 
-      // Mapa com Foco Dinâmico
       useEffect(() => {
         if (!isAuthenticated) return;
 
@@ -748,7 +741,6 @@
         return <span className="ml-1 font-bold text-blue-600 no-print">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>;
       };
 
-      // TELA DE LOGIN DE SEGURANÇA
       if (!isAuthenticated) {
         return (
           <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-4">
@@ -786,11 +778,8 @@
         );
       }
 
-      // CONTEÚDO PRINCIPAL DO PAINEL
       return (
         <div className="min-h-screen p-4 sm:p-6 max-w-[1600px] mx-auto relative">
-          
-          {/* OVERLAY DE LOADING */}
           {isLoading && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center">
               <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-200 dark:border-slate-700">
@@ -803,7 +792,6 @@
             </div>
           )}
 
-          {/* Cabeçalho */}
           <header className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 print-break-inside-avoid">
             <div className="flex items-center gap-3">
               <span className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
@@ -855,7 +843,6 @@
             </div>
           </header>
 
-          {/* Filtros Avançados */}
           <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4 no-print">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
               <div className="flex items-center gap-2">
@@ -939,9 +926,7 @@
             </div>
           </div>
 
-          {/* PAINEL DE CARDS (KPIs - COM ROLAGEM OTIMIZADA) */}
           <div className="space-y-6 mb-8 print-break-inside-avoid">
-            {/* VAGAS */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50">
               <h2 className="text-xs font-extrabold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span> Vagas Ofertadas por Ano
@@ -969,7 +954,6 @@
               </div>
             </div>
 
-            {/* MATRICULADOS */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/50">
               <h2 className="text-xs font-extrabold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Matriculados por Ano
@@ -999,7 +983,6 @@
               </div>
             </div>
 
-            {/* QUALIFICADOS */}
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/50">
               <h2 className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span> Qualificados por Ano
@@ -1037,7 +1020,6 @@
             </div>
           </div>
 
-          {/* SEÇÃO DE GRÁFICOS */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 mb-8 print-break-inside-avoid">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4 mb-6 gap-4">
               <h2 className="text-base font-bold text-slate-800 dark:text-white">Visualização Gráfica Interativa</h2>
@@ -1118,7 +1100,6 @@
             )}
           </div>
 
-          {/* Mapa */}
           <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-8 print-break-inside-avoid">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
@@ -1129,7 +1110,6 @@
             <div id="map"></div>
           </div>
 
-          {/* Tabela de Dados */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden print-break-inside-avoid">
             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ações Cadastradas ({sortedData.length})</h2>
@@ -1244,7 +1224,6 @@
               </table>
             </div>
 
-            {/* Controles da Paginação */}
             {sortedData.length > 0 && (
               <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs no-print">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">
