@@ -206,8 +206,9 @@
       const [searchTerm, setSearchTerm] = useState('');
       const [kpiFilter, setKpiFilter] = useState('TODOS');
 
-      // Seleção Interativa para Comparativo YoY (Fixado estritamente em 2 anos)
-      const [yoySelectedYears, setYoySelectedYears] = useState(['2024', '2025']);
+      // Seleção Totalmente Livre para Comparativo (Dois Anos Independentes)
+      const [yoyYear1, setYoyYear1] = useState('2024');
+      const [yoyYear2, setYoyYear2] = useState('2025');
 
       // Tabela
       const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -540,36 +541,29 @@
           .sort((a, b) => Number(a) - Number(b));
       }, [metricasPorAno]);
 
-      // Alterna seleção dos anos no comparativo interativo (RESTRINGIDO ESTRITAMENTE A 2 ANOS)
-      const toggleYoyYear = (ano) => {
-        setYoySelectedYears(prev => {
-          if (prev.includes(ano)) {
-            // Se já estiver selecionado e tentar desmarcar, não permite ficar com menos de 2
-            if (prev.length <= 2) return prev;
-            return prev.filter(a => a !== ano);
-          } else {
-            // Se já tiver 2 selecionados, remove o ano mais antigo e adiciona o novo
-            const newSelection = [prev[1], ano].sort((a, b) => Number(a) - Number(b));
-            return newSelection;
+      // Ajusta seleções iniciais para garantir que yoyYear1 e yoyYear2 existam nos dados
+      useEffect(() => {
+        if (availableYearsForYoY.length >= 2) {
+          if (!availableYearsForYoY.includes(yoyYear1)) {
+            setYoyYear1(availableYearsForYoY[0]);
           }
-        });
-      };
+          if (!availableYearsForYoY.includes(yoyYear2)) {
+            setYoyYear2(availableYearsForYoY[availableYearsForYoY.length - 1]);
+          }
+        }
+      }, [availableYearsForYoY]);
 
-      // Cálculo Dinâmico do Comparativo YoY Interativo para EXATAMENTE 2 Anos
+      // Cálculo Dinâmico do Comparativo para os 2 Anos Escolhidos Livremente
       const yoyInteractiveData = useMemo(() => {
-        if (yoySelectedYears.length !== 2) return null;
-
-        const sortedYears = [...yoySelectedYears].sort((a, b) => Number(a) - Number(b));
-        const firstYear = sortedYears[0];
-        const lastYear = sortedYears[1];
+        if (!yoyYear1 || !yoyYear2) return null;
 
         const getMetricsForYear = (yStr) => {
           const found = metricasPorAno.find(m => m.ano === yStr);
           return found ? found : { vagas: 0, matriculados: 0, qualificados: 0 };
         };
 
-        const firstData = getMetricsForYear(firstYear);
-        const lastData = getMetricsForYear(lastYear);
+        const year1Data = getMetricsForYear(yoyYear1);
+        const year2Data = getMetricsForYear(yoyYear2);
 
         const calcPercent = (curr, prev) => {
           if (!prev || prev === 0) return '0.0';
@@ -578,15 +572,15 @@
         };
 
         return {
-          firstYear,
-          lastYear,
-          firstData,
-          lastData,
-          vagasDiff: calcPercent(lastData.vagas, firstData.vagas),
-          matriculasDiff: calcPercent(lastData.matriculados, firstData.matriculados),
-          qualificadosDiff: calcPercent(lastData.qualificados, firstData.qualificados),
+          firstYear: yoyYear1,
+          lastYear: yoyYear2,
+          firstData: year1Data,
+          lastData: year2Data,
+          vagasDiff: calcPercent(year2Data.vagas, year1Data.vagas),
+          matriculasDiff: calcPercent(year2Data.matriculados, year1Data.matriculados),
+          qualificadosDiff: calcPercent(year2Data.qualificados, year1Data.qualificados),
         };
-      }, [yoySelectedYears, metricasPorAno]);
+      }, [yoyYear1, yoyYear2, metricasPorAno]);
 
       useEffect(() => {
         if (!isAuthenticated) return;
@@ -1026,42 +1020,52 @@
             </div>
           )}
 
-          {/* PAINEL DE COMPARATIVO HISTÓRICO INTERATIVO (2 Anos Selecionados e Alinhados) */}
+          {/* PAINEL DE COMPARATIVO HISTÓRICO COM SELEÇÃO DE ANOS TOTALMENTE LIVRE */}
           {yoyInteractiveData && (
             <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-3">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800">
-                    Comparativo YoY (2 Anos)
+                    Comparativo
                   </span>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-white">
                     Variação Percentual ({yoyInteractiveData.firstYear} vs. {yoyInteractiveData.lastYear})
                   </h3>
                 </div>
 
-                {/* Seleção Interativa de Exatamente 2 Anos */}
-                <div className="flex items-center gap-2 flex-wrap no-print">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Selecione 2 anos:</span>
-                  {availableYearsForYoY.map(ano => {
-                    const isSelected = yoySelectedYears.includes(ano);
-                    return (
-                      <button
-                        key={ano}
-                        onClick={() => toggleYoyYear(ano)}
-                        className={`px-3 py-1 rounded-xl text-xs font-extrabold transition cursor-pointer border ${
-                          isSelected 
-                            ? 'bg-blue-600 border-blue-500 text-white shadow-md' 
-                            : 'bg-slate-100 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                        }`}
-                      >
-                        {isSelected ? '✓ ' : ''}{ano}
-                      </button>
-                    );
-                  })}
+                {/* Seletores Individuais e Diretos para Escolha dos Anos */}
+                <div className="flex items-center gap-3 no-print">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ano Base:</label>
+                    <select
+                      value={yoyYear1}
+                      onChange={e => setYoyYear1(e.target.value)}
+                      className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-1.5 text-xs text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      {availableYearsForYoY.map(ano => (
+                        <option key={ano} value={ano}>{ano}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="text-xs font-bold text-slate-400">vs</span>
+
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ano Comparado:</label>
+                    <select
+                      value={yoyYear2}
+                      onChange={e => setYoyYear2(e.target.value)}
+                      className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-1.5 text-xs text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      {availableYearsForYoY.map(ano => (
+                        <option key={ano} value={ano}>{ano}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* Cards de Métricas Comparativas Alinhados para 2 Anos */}
+              {/* Cards de Métricas Comparativas Alinhados */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* VAGAS */}
                 <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
