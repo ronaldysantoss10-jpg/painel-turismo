@@ -405,6 +405,26 @@
         });
       }, [data, selectedYear, selectedRegiao, selectedUf, selectedTipo, selectedFonte, kpiFilter, searchTerm]);
 
+      // Base sem o filtro de UF para que o mapa sempre exiba a visão dos 27 estados e calcule totais por estado
+      const mapBaseData = useMemo(() => {
+        return data.filter(row => {
+          const matchesYear = selectedYear === 'TODOS' || String(row.ano) === String(selectedYear);
+          const matchesRegiao = selectedRegiao === 'TODOS' || row.regiao === selectedRegiao;
+          const matchesTipo = selectedTipo === 'TODOS' || row.tipo === selectedTipo;
+          const matchesFonte = selectedFonte === 'TODOS' || row.fonte === selectedFonte;
+          const searchLower = searchTerm.toLowerCase();
+          const matchesSearch = 
+            row.parceiro.toLowerCase().includes(searchLower) ||
+            row.uf.toLowerCase().includes(searchLower) ||
+            row.cidade.toLowerCase().includes(searchLower) ||
+            row.instrumento.toLowerCase().includes(searchLower) ||
+            row.sei.toLowerCase().includes(searchLower) ||
+            row.fonte.toLowerCase().includes(searchLower);
+
+          return matchesYear && matchesRegiao && matchesTipo && matchesFonte && matchesSearch;
+        });
+      }, [data, selectedYear, selectedRegiao, selectedTipo, selectedFonte, searchTerm]);
+
       const sortedData = useMemo(() => {
         if (!sortConfig.key) return filteredData;
         return [...filteredData].sort((a, b) => {
@@ -775,7 +795,7 @@
         });
       };
 
-      // Mapa Interativo com Filtro Direto na UF e Camadas Alternáveis
+      // MAPA INTERATIVO: Ao clicar na bolinha, exibe OBRIGATORIAMENTE o popup com Vagas, Matriculados e Qualificados e simultaneamente atualiza o filtro global de UF
       useEffect(() => {
         if (!isAuthenticated) return;
 
@@ -796,7 +816,7 @@
           }
         });
 
-        const ufMapData = filteredData.reduce((acc, curr) => {
+        const ufMapData = mapBaseData.reduce((acc, curr) => {
           const uf = curr.uf;
           if (!acc[uf]) acc[uf] = { vagas: 0, matriculados: 0, qualificados: 0, rows: [] };
           acc[uf].vagas += curr.vagas;
@@ -815,7 +835,7 @@
           const coords = UF_COORDINATES[uf];
           const val = info[mapMetric];
 
-          if (coords && val > 0) {
+          if (coords && (info.vagas > 0 || info.matriculados > 0 || info.qualificados > 0)) {
             bounds.push(coords);
             const radius = Math.max(10, Math.min(35, (val / maxVal) * 35));
 
@@ -830,37 +850,46 @@
               fillOpacity: isSelected ? 0.9 : 0.6
             }).addTo(mapInstance.current);
 
-            marker.bindPopup(`
-              <div class="p-2 min-w-[200px]">
-                <h4 class="font-bold text-sm text-slate-800 border-b border-slate-200 pb-1 mb-2">Estado: ${uf} ${isSelected ? '(Ativo)' : ''}</h4>
-                <div class="text-xs space-y-1 mb-3">
-                  <p class="text-blue-600 font-semibold">🔹 Vagas: <strong>${info.vagas.toLocaleString('pt-BR')}</strong></p>
-                  <p class="text-amber-600 font-semibold">🔸 Matriculados: <strong>${info.matriculados.toLocaleString('pt-BR')}</strong></p>
-                  <p class="text-emerald-600 font-semibold">🟢 Qualificados: <strong>${info.qualificados.toLocaleString('pt-BR')}</strong></p>
+            // Pop-up fixo exibindo todas as 3 métricas no clique
+            const popupContent = `
+              <div class="p-2 min-w-[210px]">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2">
+                  <h4 class="font-bold text-sm text-slate-800">Estado: ${uf}</h4>
+                  ${isSelected ? '<span class="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">Filtrado</span>' : ''}
                 </div>
-                <p class="text-[10px] text-slate-500 font-bold italic">💡 Clique para ${isSelected ? 'remover filtro' : 'filtrar a página'} por este estado</p>
+                <div class="text-xs space-y-1.5 mb-3">
+                  <div class="flex justify-between items-center"><span class="text-blue-600 font-semibold">🔹 Vagas Ofertadas:</span> <strong class="text-slate-800">${info.vagas.toLocaleString('pt-BR')}</strong></div>
+                  <div class="flex justify-between items-center"><span class="text-amber-600 font-semibold">🔸 Matriculados:</span> <strong class="text-slate-800">${info.matriculados.toLocaleString('pt-BR')}</strong></div>
+                  <div class="flex justify-between items-center"><span class="text-emerald-600 font-semibold">🟢 Qualificados:</span> <strong class="text-slate-800">${info.qualificados.toLocaleString('pt-BR')}</strong></div>
+                </div>
+                <div class="border-t border-slate-100 pt-1.5 text-center">
+                  <p class="text-[10px] text-slate-500 font-bold italic">💡 ${isSelected ? 'Clique novamente para remover filtro' : 'Painel filtrado para ' + uf}</p>
+                </div>
               </div>
-            `);
+            `;
 
+            marker.bindPopup(popupContent);
+
+            // Ao clicar na bolinha do mapa, força a abertura do popup e atualiza a UF no estado do React
             marker.on('click', () => {
+              marker.openPopup();
               if (selectedUf === uf) {
                 setSelectedUf('TODOS');
               } else {
                 setSelectedUf(uf);
               }
             });
+
+            // Se for o estado filtrado atualmente, reabre o popup automaticamente após a renderização
+            if (isSelected) {
+              setTimeout(() => {
+                marker.openPopup();
+              }, 100);
+            }
           }
         });
 
-        if (bounds.length === 1) {
-          mapInstance.current.setView(bounds[0], 7);
-        } else if (bounds.length > 1) {
-          mapInstance.current.fitBounds(bounds, { padding: [30, 30] });
-        } else {
-          mapInstance.current.setView([-14.235, -51.925], 4);
-        }
-
-      }, [isAuthenticated, filteredData, mapMetric, selectedUf]);
+      }, [isAuthenticated, mapBaseData, mapMetric, selectedUf]);
 
       useEffect(() => {
         if (!isAuthenticated) return;
