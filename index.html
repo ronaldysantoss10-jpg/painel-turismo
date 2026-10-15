@@ -60,12 +60,12 @@
     @media print {
       @page {
         size: A4 landscape;
-        margin: 8mm;
+        margin: 5mm;
       }
       body {
         background-color: #ffffff !important;
         color: #000000 !important;
-        font-size: 8pt !important;
+        font-size: 7.5pt !important;
       }
       .no-print {
         display: none !important;
@@ -79,34 +79,34 @@
         padding: 0 !important;
       }
 
-      .grid-cols-1, .lg\:grid-cols-2 {
-        display: block !important;
+      .pdf-slide-mode {
+        padding: 0 !important;
+        margin: 0 !important;
       }
-      .grid-cols-1 > div, .lg\:grid-cols-2 > div {
-        width: 100% !important;
-        margin-bottom: 1rem !important;
-        page-break-inside: avoid !important;
+      .pdf-slide-mode #map {
+        height: 220px !important;
       }
 
+      .grid-cols-1, .lg\:grid-cols-2 {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 0.5rem !important;
+      }
+      
       .h-64, .h-56 {
-        height: 220px !important;
+        height: 180px !important;
         width: 100% !important;
       }
 
       table {
         width: 100% !important;
         table-layout: fixed !important;
-        font-size: 7.5pt !important;
+        font-size: 7pt !important;
       }
       th, td {
-        padding: 4px 2px !important;
+        padding: 3px 2px !important;
         word-wrap: break-word !important;
         white-space: normal !important;
-      }
-      #map {
-        height: 260px !important;
-        width: 100% !important;
-        break-inside: avoid;
       }
       .shadow-sm, .shadow-md {
         box-shadow: none !important;
@@ -195,6 +195,7 @@
       
       const [darkMode, setDarkMode] = useState(false);
       const [presentationMode, setPresentationMode] = useState(false);
+      const [pdfReportMode, setPdfReportMode] = useState(false);
       const [selectedRowDetail, setSelectedRowDetail] = useState(null);
 
       // Filtros Gerais
@@ -206,9 +207,14 @@
       const [searchTerm, setSearchTerm] = useState('');
       const [kpiFilter, setKpiFilter] = useState('TODOS');
 
-      // Seleção Totalmente Livre para Comparativo (Dois Anos Independentes)
+      // Seleção Multivariável para Comparativo (Ano 1, Ano 2, Região e Tipo)
       const [yoyYear1, setYoyYear1] = useState('2024');
       const [yoyYear2, setYoyYear2] = useState('2025');
+      const [yoyRegiao, setYoyRegiao] = useState('TODOS');
+      const [yoyTipo, setYoyTipo] = useState('TODOS');
+
+      // Camada Métrica do Mapa
+      const [mapMetric, setMapMetric] = useState('vagas');
 
       // Tabela
       const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -216,9 +222,10 @@
       const [itemsPerPage, setItemsPerPage] = useState(10);
 
       // Gráficos
-      const [activeTab, setActiveTab] = useState('evolucao');
+      const [activeTab, setActiveTab] = useState('funil');
 
       const chartContainerRef = useRef(null);
+      const funnelRef = useRef(null);
       const lineTrendRef = useRef(null);
       const pieVagasRef = useRef(null);
       const barVagasRef = useRef(null);
@@ -456,6 +463,14 @@
         XLSX.writeFile(wb, `Relatorio_Turismo_Filtrado_${dataAtual}.xlsx`);
       };
 
+      const handleGeneratePdfReport = () => {
+        setPdfReportMode(true);
+        setTimeout(() => {
+          window.print();
+          setPdfReportMode(false);
+        }, 500);
+      };
+
       const exportChartPNG = () => {
         if (!chartContainerRef.current) return;
         const canvas = chartContainerRef.current.querySelector('canvas');
@@ -533,7 +548,6 @@
           .map(([ano, info]) => ({ ano, ...info }));
       }, [data, selectedRegiao, selectedUf, selectedTipo, selectedFonte, searchTerm]);
 
-      // Anos Válidos disponíveis para Comparativo Interativo
       const availableYearsForYoY = useMemo(() => {
         return metricasPorAno
           .map(m => m.ano)
@@ -541,29 +555,34 @@
           .sort((a, b) => Number(a) - Number(b));
       }, [metricasPorAno]);
 
-      // Ajusta seleções iniciais para garantir que yoyYear1 e yoyYear2 existam nos dados
       useEffect(() => {
         if (availableYearsForYoY.length >= 2) {
-          if (!availableYearsForYoY.includes(yoyYear1)) {
-            setYoyYear1(availableYearsForYoY[0]);
-          }
-          if (!availableYearsForYoY.includes(yoyYear2)) {
-            setYoyYear2(availableYearsForYoY[availableYearsForYoY.length - 1]);
-          }
+          if (!availableYearsForYoY.includes(yoyYear1)) setYoyYear1(availableYearsForYoY[0]);
+          if (!availableYearsForYoY.includes(yoyYear2)) setYoyYear2(availableYearsForYoY[availableYearsForYoY.length - 1]);
         }
       }, [availableYearsForYoY]);
 
-      // Cálculo Dinâmico do Comparativo para os 2 Anos Escolhidos Livremente
+      // Comparativo Multivariável Dinâmico (Ano 1 vs Ano 2 por Região e Tipo)
       const yoyInteractiveData = useMemo(() => {
         if (!yoyYear1 || !yoyYear2) return null;
 
-        const getMetricsForYear = (yStr) => {
-          const found = metricasPorAno.find(m => m.ano === yStr);
-          return found ? found : { vagas: 0, matriculados: 0, qualificados: 0 };
+        const getFilteredMetrics = (yStr) => {
+          const rows = data.filter(row => {
+            const matchesAno = String(row.ano) === String(yStr);
+            const matchesReg = yoyRegiao === 'TODOS' || row.regiao === yoyRegiao;
+            const matchesTip = yoyTipo === 'TODOS' || row.tipo === yoyTipo;
+            return matchesAno && matchesReg && matchesTip;
+          });
+
+          return {
+            vagas: rows.reduce((acc, r) => acc + r.vagas, 0),
+            matriculados: rows.reduce((acc, r) => acc + r.matriculados, 0),
+            qualificados: rows.reduce((acc, r) => acc + r.qualificados, 0),
+          };
         };
 
-        const year1Data = getMetricsForYear(yoyYear1);
-        const year2Data = getMetricsForYear(yoyYear2);
+        const year1Data = getFilteredMetrics(yoyYear1);
+        const year2Data = getFilteredMetrics(yoyYear2);
 
         const calcPercent = (curr, prev) => {
           if (!prev || prev === 0) return '0.0';
@@ -580,8 +599,58 @@
           matriculasDiff: calcPercent(year2Data.matriculados, year1Data.matriculados),
           qualificadosDiff: calcPercent(year2Data.qualificados, year1Data.qualificados),
         };
-      }, [yoyYear1, yoyYear2, metricasPorAno]);
+      }, [yoyYear1, yoyYear2, yoyRegiao, yoyTipo, data]);
 
+      // Gráfico Funil de Conversão
+      useEffect(() => {
+        if (!isAuthenticated) return;
+
+        if (activeTab === 'funil' && funnelRef.current) {
+          if (chartInstances.current['funnel']) {
+            chartInstances.current['funnel'].destroy();
+          }
+
+          const vagas = kpis.vagas;
+          const matriculas = kpis.matriculados;
+          const qualificados = kpis.qualificados;
+
+          chartInstances.current['funnel'] = new Chart(funnelRef.current, {
+            type: 'bar',
+            data: {
+              labels: ['1. Vagas Ofertadas', '2. Matriculados', '3. Qualificados'],
+              datasets: [{
+                label: 'Volume de Alunos',
+                data: [vagas, matriculas, qualificados],
+                backgroundColor: ['#2563eb', '#d97706', '#059669'],
+                borderRadius: 8
+              }]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: (context) => {
+                      const val = context.raw;
+                      const pctOfVagas = vagas > 0 ? ((val / vagas) * 100).toFixed(1) : 0;
+                      return `${val.toLocaleString('pt-BR')} (${pctOfVagas}% das Vagas)`;
+                    }
+                  }
+                }
+              },
+              scales: {
+                x: { beginAtZero: true, ticks: { color: darkMode ? '#94a3b8' : '#64748b' } },
+                y: { ticks: { font: { size: 12, weight: 'bold' }, color: darkMode ? '#cbd5e1' : '#334155' } }
+              }
+            }
+          });
+        }
+      }, [isAuthenticated, activeTab, kpis, darkMode]);
+
+      // Gráfico Evolução Temporal
       useEffect(() => {
         if (!isAuthenticated) return;
 
@@ -706,6 +775,7 @@
         });
       };
 
+      // Mapa Interativo com Filtro Direto na UF e Camadas Alternáveis
       useEffect(() => {
         if (!isAuthenticated) return;
 
@@ -736,39 +806,45 @@
           return acc;
         }, {});
 
-        const maxVagas = Math.max(...Object.values(ufMapData).map(d => d.vagas), 1);
+        const maxVal = Math.max(...Object.values(ufMapData).map(d => d[mapMetric]), 1);
         const bounds = [];
+
+        const metricColor = mapMetric === 'vagas' ? '#2563eb' : mapMetric === 'matriculados' ? '#d97706' : '#059669';
 
         Object.entries(ufMapData).forEach(([uf, info]) => {
           const coords = UF_COORDINATES[uf];
-          if (coords && info.vagas > 0) {
+          const val = info[mapMetric];
+
+          if (coords && val > 0) {
             bounds.push(coords);
-            const radius = Math.max(10, Math.min(35, (info.vagas / maxVagas) * 35));
+            const radius = Math.max(10, Math.min(35, (val / maxVal) * 35));
+
+            const isSelected = selectedUf === uf;
 
             const marker = L.circleMarker(coords, {
               radius: radius,
-              fillColor: '#2563eb',
-              color: '#1d4ed8',
-              weight: 1.5,
+              fillColor: metricColor,
+              color: isSelected ? '#ef4444' : metricColor,
+              weight: isSelected ? 3 : 1.5,
               opacity: 1,
-              fillOpacity: 0.6
+              fillOpacity: isSelected ? 0.9 : 0.6
             }).addTo(mapInstance.current);
 
             marker.bindPopup(`
               <div class="p-2 min-w-[200px]">
-                <h4 class="font-bold text-sm text-slate-800 border-b border-slate-200 pb-1 mb-2">Estado: ${uf}</h4>
+                <h4 class="font-bold text-sm text-slate-800 border-b border-slate-200 pb-1 mb-2">Estado: ${uf} ${isSelected ? '(Ativo)' : ''}</h4>
                 <div class="text-xs space-y-1 mb-3">
                   <p class="text-blue-600 font-semibold">🔹 Vagas: <strong>${info.vagas.toLocaleString('pt-BR')}</strong></p>
                   <p class="text-amber-600 font-semibold">🔸 Matriculados: <strong>${info.matriculados.toLocaleString('pt-BR')}</strong></p>
                   <p class="text-emerald-600 font-semibold">🟢 Qualificados: <strong>${info.qualificados.toLocaleString('pt-BR')}</strong></p>
                 </div>
-                <p class="text-[10px] text-slate-400 italic">Clique no marcador para filtrar pelo estado</p>
+                <p class="text-[10px] text-slate-500 font-bold italic">💡 Clique para ${isSelected ? 'remover filtro' : 'filtrar a página'} por este estado</p>
               </div>
             `);
 
             marker.on('click', () => {
-              if (info.rows.length === 1) {
-                setSelectedRowDetail(info.rows[0]);
+              if (selectedUf === uf) {
+                setSelectedUf('TODOS');
               } else {
                 setSelectedUf(uf);
               }
@@ -784,7 +860,7 @@
           mapInstance.current.setView([-14.235, -51.925], 4);
         }
 
-      }, [isAuthenticated, filteredData]);
+      }, [isAuthenticated, filteredData, mapMetric, selectedUf]);
 
       useEffect(() => {
         if (!isAuthenticated) return;
@@ -856,7 +932,7 @@
       }
 
       return (
-        <div className={`min-h-screen ${presentationMode ? 'p-2 sm:p-4 max-w-none' : 'p-4 sm:p-6 max-w-[1600px]'} mx-auto relative`}>
+        <div className={`min-h-screen ${pdfReportMode ? 'pdf-slide-mode bg-white text-slate-900' : presentationMode ? 'p-2 sm:p-4 max-w-none' : 'p-4 sm:p-6 max-w-[1600px]'} mx-auto relative`}>
           {isLoading && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center">
               <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-200 dark:border-slate-700">
@@ -878,6 +954,7 @@
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
                   Qualificação do Turismo
                   {presentationMode && <span className="bg-amber-500 text-slate-900 text-[10px] px-2 py-0.5 rounded-full uppercase font-black">Modo Apresentação TV</span>}
+                  {pdfReportMode && <span className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full uppercase font-black">Relatório Executivo</span>}
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   Painel Analítico de Indicadores e Metas Executadas {lastUpdated && `(Atualizado às ${lastUpdated})`}
@@ -887,13 +964,20 @@
 
             <div className="flex items-center gap-3 flex-wrap no-print">
               <button 
+                onClick={handleGeneratePdfReport}
+                className="p-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+                title="Exportar Relatório Executivo Resumido em formato Slide (1 pág)"
+              >
+                📄 Relatório PDF (1 Pág)
+              </button>
+
+              <button 
                 onClick={() => setPresentationMode(!presentationMode)}
                 className={`p-2.5 rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer ${
                   presentationMode 
                     ? 'bg-amber-500 text-slate-900 hover:bg-amber-400 font-bold' 
                     : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                 }`}
-                title="Modo Apresentação / Dashboard TV (Oculta controles secundários)"
               >
                 📺 {presentationMode ? 'Sair do Modo TV' : 'Modo Apresentação'}
               </button>
@@ -901,7 +985,6 @@
               <button 
                 onClick={exportToExcel}
                 className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
-                title="Exportar registros filtrados em Excel"
               >
                 📥 Exportar Excel
               </button>
@@ -910,18 +993,17 @@
                 onClick={() => window.print()}
                 className="p-2.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl transition text-xs font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
               >
-                🖨️ Imprimir / PDF
+                🖨️ Imprimir
               </button>
 
               <button 
                 onClick={() => setDarkMode(!darkMode)}
-                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 transition text-xs font-semibold flex items-center gap-2 cursor-pointer"
               >
-                {darkMode ? '☀️ Tema Claro' : '🌙 Tema Escuro'}
+                {darkMode ? '☀️ Claro' : '🌙 Escuro'}
               </button>
 
               <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold text-xs transition cursor-pointer flex items-center gap-2 shadow-sm">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                 Carregar Planilha (.xlsx)
                 <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" />
               </label>
@@ -935,13 +1017,10 @@
             </div>
           </header>
 
-          {!presentationMode && (
+          {!presentationMode && !pdfReportMode && (
             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4 no-print">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Filtros de Pesquisa</span>
-                </div>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Filtros de Pesquisa</span>
 
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -951,15 +1030,12 @@
                   <button 
                     onClick={resetFilters}
                     disabled={!isFilterActive}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition shadow-sm ${
+                    className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition ${
                       isFilterActive 
-                        ? 'bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900 cursor-pointer' 
-                        : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 cursor-pointer' 
+                        : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
                     }`}
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
                     Limpar Filtros
                   </button>
                 </div>
@@ -968,7 +1044,7 @@
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Ano</label>
-                  <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium">
                     <option value="TODOS">Todos os Anos</option>
                     {uniqueYears.map(ano => <option key={ano} value={ano}>{ano}</option>)}
                   </select>
@@ -976,7 +1052,7 @@
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Região</label>
-                  <select value={selectedRegiao} onChange={e => setSelectedRegiao(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <select value={selectedRegiao} onChange={e => setSelectedRegiao(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium">
                     <option value="TODOS">Todas as Regiões</option>
                     {uniqueRegioes.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
@@ -984,7 +1060,7 @@
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">UF (Estado)</label>
-                  <select value={selectedUf} onChange={e => setSelectedUf(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <select value={selectedUf} onChange={e => setSelectedUf(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium">
                     <option value="TODOS">Todas as UFs</option>
                     {uniqueUfs.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                   </select>
@@ -992,7 +1068,7 @@
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Tipo de Instituição</label>
-                  <select value={selectedTipo} onChange={e => setSelectedTipo(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <select value={selectedTipo} onChange={e => setSelectedTipo(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium">
                     <option value="TODOS">Todos os Executores</option>
                     {uniqueTipos.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -1000,7 +1076,7 @@
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Fonte de Recurso</label>
-                  <select value={selectedFonte} onChange={e => setSelectedFonte(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500">
+                  <select value={selectedFonte} onChange={e => setSelectedFonte(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium">
                     <option value="TODOS">Todas as Fontes</option>
                     {uniqueFontes.map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
@@ -1013,123 +1089,141 @@
                     placeholder="Parceiro, SEI, Cidade..." 
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs text-slate-700 dark:text-slate-200 font-medium focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2 text-xs font-medium"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* PAINEL DE COMPARATIVO HISTÓRICO COM SELEÇÃO DE ANOS TOTALMENTE LIVRE */}
-          {yoyInteractiveData && (
+          {/* PAINEL DE COMPARATIVO MULTIVARIÁVEL */}
+          {yoyInteractiveData && !pdfReportMode && (
             <div className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700 pb-3">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800">
-                    Comparativo
+                    Comparativo Multivariável
                   </span>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                    Variação Percentual ({yoyInteractiveData.firstYear} vs. {yoyInteractiveData.lastYear})
+                    Variação ({yoyInteractiveData.firstYear} vs. {yoyInteractiveData.lastYear})
                   </h3>
                 </div>
 
-                {/* Seletores Individuais e Diretos para Escolha dos Anos */}
-                <div className="flex items-center gap-3 no-print">
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ano Base:</label>
-                    <select
-                      value={yoyYear1}
-                      onChange={e => setYoyYear1(e.target.value)}
-                      className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-1.5 text-xs text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                    >
-                      {availableYearsForYoY.map(ano => (
-                        <option key={ano} value={ano}>{ano}</option>
-                      ))}
+                <div className="flex items-center gap-2 flex-wrap no-print text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-slate-400">Ano 1:</span>
+                    <select value={yoyYear1} onChange={e => setYoyYear1(e.target.value)} className="bg-slate-100 dark:bg-slate-700 border rounded-lg p-1 font-bold">
+                      {availableYearsForYoY.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                   </div>
 
-                  <span className="text-xs font-bold text-slate-400">vs</span>
+                  <span className="font-bold text-slate-400">vs</span>
 
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Ano Comparado:</label>
-                    <select
-                      value={yoyYear2}
-                      onChange={e => setYoyYear2(e.target.value)}
-                      className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-1.5 text-xs text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                    >
-                      {availableYearsForYoY.map(ano => (
-                        <option key={ano} value={ano}>{ano}</option>
-                      ))}
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-slate-400">Ano 2:</span>
+                    <select value={yoyYear2} onChange={e => setYoyYear2(e.target.value)} className="bg-slate-100 dark:bg-slate-700 border rounded-lg p-1 font-bold">
+                      {availableYearsForYoY.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1 ml-2">
+                    <span className="font-semibold text-slate-400">Região:</span>
+                    <select value={yoyRegiao} onChange={e => setYoyRegiao(e.target.value)} className="bg-slate-100 dark:bg-slate-700 border rounded-lg p-1 font-bold">
+                      <option value="TODOS">Todas</option>
+                      {uniqueRegioes.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-slate-400">Tipo:</span>
+                    <select value={yoyTipo} onChange={e => setYoyTipo(e.target.value)} className="bg-slate-100 dark:bg-slate-700 border rounded-lg p-1 font-bold max-w-[140px] truncate">
+                      <option value="TODOS">Todos</option>
+                      {uniqueTipos.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                 </div>
               </div>
 
-              {/* Cards de Métricas Comparativas Alinhados */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* VAGAS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Vagas Ofertadas</span>
-                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.vagasDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-extrabold uppercase text-slate-500">Vagas</span>
+                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.vagasDiff) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                       {Number(yoyInteractiveData.vagasDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.vagasDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
-                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
-                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.vagas.toLocaleString('pt-BR')}</span>
-                    </div>
-                    <div className="text-center pl-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
-                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{yoyInteractiveData.lastData.vagas.toLocaleString('pt-BR')}</span>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 border-t pt-2 text-center text-xs">
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.firstYear}</span><strong>{yoyInteractiveData.firstData.vagas.toLocaleString('pt-BR')}</strong></div>
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.lastYear}</span><strong className="text-blue-600">{yoyInteractiveData.lastData.vagas.toLocaleString('pt-BR')}</strong></div>
                   </div>
                 </div>
 
-                {/* MATRÍCULAS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Matrículas</span>
-                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.matriculasDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-extrabold uppercase text-slate-500">Matrículas</span>
+                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.matriculasDiff) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                       {Number(yoyInteractiveData.matriculasDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.matriculasDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
-                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
-                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.matriculados.toLocaleString('pt-BR')}</span>
-                    </div>
-                    <div className="text-center pl-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
-                      <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{yoyInteractiveData.lastData.matriculados.toLocaleString('pt-BR')}</span>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 border-t pt-2 text-center text-xs">
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.firstYear}</span><strong>{yoyInteractiveData.firstData.matriculados.toLocaleString('pt-BR')}</strong></div>
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.lastYear}</span><strong className="text-amber-600">{yoyInteractiveData.lastData.matriculados.toLocaleString('pt-BR')}</strong></div>
                   </div>
                 </div>
 
-                {/* QUALIFICADOS */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Qualificados</span>
-                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.qualificadosDiff) >= 0 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'}`}>
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-extrabold uppercase text-slate-500">Qualificados</span>
+                    <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${Number(yoyInteractiveData.qualificadosDiff) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                       {Number(yoyInteractiveData.qualificadosDiff) >= 0 ? '▲ +' : '▼ '}{yoyInteractiveData.qualificadosDiff}%
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 border-t border-slate-200 dark:border-slate-800 pt-3">
-                    <div className="text-center border-r border-slate-200 dark:border-slate-800 pr-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.firstYear}</span>
-                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{yoyInteractiveData.firstData.qualificados.toLocaleString('pt-BR')}</span>
-                    </div>
-                    <div className="text-center pl-2">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-semibold">{yoyInteractiveData.lastYear}</span>
-                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{yoyInteractiveData.lastData.qualificados.toLocaleString('pt-BR')}</span>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 border-t pt-2 text-center text-xs">
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.firstYear}</span><strong>{yoyInteractiveData.firstData.qualificados.toLocaleString('pt-BR')}</strong></div>
+                    <div><span className="text-slate-400 block">{yoyInteractiveData.lastYear}</span><strong className="text-emerald-600">{yoyInteractiveData.lastData.qualificados.toLocaleString('pt-BR')}</strong></div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
+          {/* METAS E INDICADORES DE EXECUÇÃO */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 space-y-3">
+            <h3 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Metas Executadas e Conversão de Alunos</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <div className="flex justify-between text-xs font-bold mb-1">
+                  <span className="text-blue-600">Preenchimento de Vagas</span>
+                  <span>{kpis.taxaPreenchimento}%</span>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${Math.min(100, Number(kpis.taxaPreenchimento))}%` }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-bold mb-1">
+                  <span className="text-emerald-600">Taxa de Conclusão</span>
+                  <span>{kpis.taxaConclusao}%</span>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-emerald-500 h-2.5 rounded-full" style={{ width: `${Math.min(100, Number(kpis.taxaConclusao))}%` }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-bold mb-1">
+                  <span className="text-rose-600">Evasão Estimada</span>
+                  <span>{kpis.taxaEvasao}%</span>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-rose-500 h-2.5 rounded-full" style={{ width: `${Math.min(100, Number(kpis.taxaEvasao))}%` }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* PAINÉIS DE KPIS SCROLLÁVEIS POR ANO */}
           <div className="space-y-6 mb-8 print-break-inside-avoid">
             <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/50">
               <h2 className="text-xs font-extrabold text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -1224,14 +1318,14 @@
             </div>
           </div>
 
+          {/* ÁREA DE GRÁFICOS */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 mb-8 print-break-inside-avoid" ref={chartContainerRef}>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4 mb-6 gap-4">
               <div className="flex items-center gap-3">
                 <h2 className="text-base font-bold text-slate-800 dark:text-white">Visualização Gráfica Interativa</h2>
                 <button 
                   onClick={exportChartPNG} 
-                  className="bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 font-semibold flex items-center gap-1 transition no-print"
-                  title="Salvar gráfico atual em imagem PNG"
+                  className="bg-slate-100 dark:bg-slate-700 text-xs px-2.5 py-1 rounded-lg border font-semibold no-print"
                 >
                   📷 Exportar PNG
                 </button>
@@ -1239,31 +1333,46 @@
 
               <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-xl gap-1 flex-wrap no-print">
                 <button
-                  onClick={() => setActiveTab('evolucao')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'evolucao' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  onClick={() => setActiveTab('funil')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'funil' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-slate-500'}`}
                 >
-                  📈 Evolução Temporal
+                  🔻 Funil de Conversão
+                </button>
+                <button
+                  onClick={() => setActiveTab('evolucao')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'evolucao' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                  📈 Evolução Anual
                 </button>
                 <button
                   onClick={() => setActiveTab('vagas')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'vagas' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'vagas' ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-slate-500'}`}
                 >
-                  🔹 Vagas Ofertadas
+                  🔹 Vagas
                 </button>
                 <button
                   onClick={() => setActiveTab('matriculas')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'matriculas' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'matriculas' ? 'bg-white dark:bg-slate-800 text-amber-600 shadow-sm' : 'text-slate-500'}`}
                 >
-                  🔸 Matriculados
+                  🔸 Matrículas
                 </button>
                 <button
                   onClick={() => setActiveTab('qualificados')}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeTab === 'qualificados' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-300'}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${activeTab === 'qualificados' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-500'}`}
                 >
                   🟢 Qualificados
                 </button>
               </div>
             </div>
+
+            {activeTab === 'funil' && (
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Funil de Conversão Geral (Vagas ➔ Matrículas ➔ Qualificados)</h3>
+                <div className="h-64 relative">
+                  <canvas ref={funnelRef}></canvas>
+                </div>
+              </div>
+            )}
 
             {activeTab === 'evolucao' && (
               <div>
@@ -1276,204 +1385,181 @@
 
             {activeTab === 'vagas' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Vagas por Tipo de Instituição</h3>
-                  <div className="h-56 relative"><canvas ref={pieVagasRef}></canvas></div>
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Vagas)</h3>
-                  <div className="h-56 relative"><canvas ref={barVagasRef}></canvas></div>
-                </div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Vagas por Tipo</h3><div className="h-56 relative"><canvas ref={pieVagasRef}></canvas></div></div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Top 5 Executoras (Vagas)</h3><div className="h-56 relative"><canvas ref={barVagasRef}></canvas></div></div>
               </div>
             )}
 
             {activeTab === 'matriculas' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Matriculados por Tipo de Instituição</h3>
-                  <div className="h-56 relative"><canvas ref={pieMatriculasRef}></canvas></div>
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Matriculados)</h3>
-                  <div className="h-56 relative"><canvas ref={barMatriculasRef}></canvas></div>
-                </div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Matriculados por Tipo</h3><div className="h-56 relative"><canvas ref={pieMatriculasRef}></canvas></div></div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Top 5 Executoras (Matriculados)</h3><div className="h-56 relative"><canvas ref={barMatriculasRef}></canvas></div></div>
               </div>
             )}
 
             {activeTab === 'qualificados' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Qualificados por Tipo de Instituição</h3>
-                  <div className="h-56 relative"><canvas ref={pieQualificadosRef}></canvas></div>
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Top 5 Instituições Executoras (Qualificados)</h3>
-                  <div className="h-56 relative"><canvas ref={barQualificadosRef}></canvas></div>
-                </div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Qualificados por Tipo</h3><div className="h-56 relative"><canvas ref={pieQualificadosRef}></canvas></div></div>
+                <div><h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Top 5 Executoras (Qualificados)</h3><div className="h-56 relative"><canvas ref={barQualificadosRef}></canvas></div></div>
               </div>
             )}
           </div>
 
+          {/* MAPA INTERATIVO */}
           <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-8 print-break-inside-avoid">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
               <h2 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
-                Distribuição Geográfica de Vagas por Estado (UF)
+                Distribuição Geográfica por Estado (UF) {selectedUf !== 'TODOS' && `- Filtrado por ${selectedUf}`}
               </h2>
+
+              <div className="flex items-center gap-2 no-print text-xs font-semibold">
+                <span className="text-slate-400">Camada do Mapa:</span>
+                <button 
+                  onClick={() => setMapMetric('vagas')}
+                  className={`px-2.5 py-1 rounded-lg transition ${mapMetric === 'vagas' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600'}`}
+                >
+                  Vagas
+                </button>
+                <button 
+                  onClick={() => setMapMetric('matriculados')}
+                  className={`px-2.5 py-1 rounded-lg transition ${mapMetric === 'matriculados' ? 'bg-amber-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600'}`}
+                >
+                  Matrículas
+                </button>
+                <button 
+                  onClick={() => setMapMetric('qualificados')}
+                  className={`px-2.5 py-1 rounded-lg transition ${mapMetric === 'qualificados' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600'}`}
+                >
+                  Qualificados
+                </button>
+              </div>
             </div>
             <div id="map"></div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden print-break-inside-avoid">
-            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ações Cadastradas ({sortedData.length})</h2>
-              
-              <div className="flex items-center gap-2 no-print">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Itens por página:</span>
-                <select 
-                  value={itemsPerPage} 
-                  onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs p-1 font-semibold text-slate-700 dark:text-slate-200"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
-                <thead className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 uppercase font-semibold border-b border-slate-200 dark:border-slate-600 select-none">
-                  <tr>
-                    <th onClick={() => handleSort('ano')} className="p-2.5 cursor-pointer">
-                      Ano {renderSortIcon('ano')}
-                    </th>
-                    <th onClick={() => handleSort('regiao')} className="p-2.5 cursor-pointer">
-                      Região {renderSortIcon('regiao')}
-                    </th>
-                    <th onClick={() => handleSort('tipo')} className="p-2.5 cursor-pointer">
-                      Tipo {renderSortIcon('tipo')}
-                    </th>
-                    <th onClick={() => handleSort('parceiro')} className="p-2.5 cursor-pointer">
-                      Instituição Parceira {renderSortIcon('parceiro')}
-                    </th>
-                    <th className="p-2.5">Instrumento</th>
-                    <th className="p-2.5">Nº SEI</th>
-                    <th onClick={() => handleSort('uf')} className="p-2.5 cursor-pointer">
-                      UF / Cidade {renderSortIcon('uf')}
-                    </th>
-                    <th onClick={() => handleSort('cursos')} className="p-2.5 text-right cursor-pointer">
-                      Cursos {renderSortIcon('cursos')}
-                    </th>
-                    <th onClick={() => handleSort('vagas')} className="p-2.5 text-right cursor-pointer">
-                      Vagas {renderSortIcon('vagas')}
-                    </th>
-                    <th onClick={() => handleSort('matriculados')} className="p-2.5 text-right cursor-pointer">
-                      Matrículas {renderSortIcon('matriculados')}
-                    </th>
-                    <th onClick={() => handleSort('qualificados')} className="p-2.5 text-right cursor-pointer">
-                      Qualificados {renderSortIcon('qualificados')}
-                    </th>
-                    <th onClick={() => handleSort('taxaConclusao')} className="p-2.5 text-center cursor-pointer min-w-[120px]">
-                      Taxa Conclusão {renderSortIcon('taxaConclusao')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {paginatedData.length > 0 ? (
-                    paginatedData.map((row, idx) => {
-                      const temMatriculas = row.matriculados > 0;
-                      const pctConclusao = temMatriculas 
-                        ? Math.round((row.qualificados / row.matriculados) * 100) 
-                        : 0;
-
-                      return (
-                        <tr 
-                          key={idx} 
-                          onClick={() => setSelectedRowDetail(row)} 
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition cursor-pointer"
-                        >
-                          <td className="p-2.5 font-bold text-slate-800 dark:text-white">{row.ano || '-'}</td>
-                          <td className="p-2.5 font-semibold text-slate-700 dark:text-slate-200">{row.regiao || '-'}</td>
-                          <td className="p-2.5 text-slate-600 dark:text-slate-300 font-medium">{row.tipo || '-'}</td>
-                          <td className="p-2.5">
-                            <div className="font-semibold text-slate-800 dark:text-slate-100">{row.parceiro || '-'}</div>
-                            {row.fonte && (
-                              <span className="inline-block text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded px-1">
-                                Fonte: {row.fonte}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-2.5 font-mono text-slate-500 dark:text-slate-400 text-[10px]">{row.instrumento || '-'}</td>
-                          <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300 text-[10px] font-medium">{row.sei || '-'}</td>
-                          <td className="p-2.5 font-medium text-slate-700 dark:text-slate-200">
-                            <span className="font-bold text-blue-600 dark:text-blue-400 mr-1">{row.uf || '-'}</span> {row.cidade ? `- ${row.cidade}` : ''}
-                          </td>
-                          <td className="p-2.5 text-right font-medium">{row.cursos || 0}</td>
-                          <td className="p-2.5 text-right font-semibold text-slate-800 dark:text-white">{row.vagas.toLocaleString('pt-BR')}</td>
-                          <td className="p-2.5 text-right text-amber-600 dark:text-amber-400 font-semibold">{row.matriculados.toLocaleString('pt-BR')}</td>
-                          <td className="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold">{row.qualificados.toLocaleString('pt-BR')}</td>
-                          <td className="p-2.5">
-                            {temMatriculas ? (
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden no-print">
-                                  <div 
-                                    className={`h-1.5 rounded-full ${pctConclusao > 75 ? 'bg-emerald-500' : pctConclusao > 40 ? 'bg-amber-500' : 'bg-blue-500'}`} 
-                                    style={{ width: `${pctConclusao}%` }}
-                                  ></div>
-                                </div>
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 w-full text-center">{pctConclusao}%</span>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] font-medium text-slate-400 block text-center">N/A (0 mat.)</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan="12" className="p-6 text-center text-slate-400 font-medium">Nenhum registro encontrado com os filtros selecionados.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {sortedData.length > 0 && (
-              <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs no-print">
-                <span className="text-slate-500 dark:text-slate-400 font-medium">
-                  Mostrando <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> a <strong>{Math.min(currentPage * itemsPerPage, sortedData.length)}</strong> de <strong>{sortedData.length}</strong> itens
-                </span>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition cursor-pointer"
+          {/* TABELA DE REGISTROS COMPLETA */}
+          {!pdfReportMode && (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden print-break-inside-avoid">
+              <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <h2 className="font-bold text-slate-800 dark:text-white text-sm">Ações Cadastradas ({sortedData.length})</h2>
+                
+                <div className="flex items-center gap-2 no-print">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Itens por página:</span>
+                  <select 
+                    value={itemsPerPage} 
+                    onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                    className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs p-1 font-semibold text-slate-700 dark:text-slate-200"
                   >
-                    Anterior
-                  </button>
-
-                  <span className="font-semibold text-slate-700 dark:text-slate-200 px-2">
-                    Página {currentPage} de {totalPages}
-                  </span>
-
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition cursor-pointer"
-                  >
-                    Próximo
-                  </button>
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Modal de Detalhamento da Parceria (Drill-Down) */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+                  <thead className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 uppercase font-semibold border-b border-slate-200 dark:border-slate-600 select-none">
+                    <tr>
+                      <th onClick={() => handleSort('ano')} className="p-2.5 cursor-pointer">Ano {renderSortIcon('ano')}</th>
+                      <th onClick={() => handleSort('regiao')} className="p-2.5 cursor-pointer">Região {renderSortIcon('regiao')}</th>
+                      <th onClick={() => handleSort('tipo')} className="p-2.5 cursor-pointer">Tipo {renderSortIcon('tipo')}</th>
+                      <th onClick={() => handleSort('parceiro')} className="p-2.5 cursor-pointer">Instituição Parceira {renderSortIcon('parceiro')}</th>
+                      <th className="p-2.5">Instrumento</th>
+                      <th className="p-2.5">Nº SEI</th>
+                      <th onClick={() => handleSort('uf')} className="p-2.5 cursor-pointer">UF / Cidade {renderSortIcon('uf')}</th>
+                      <th onClick={() => handleSort('cursos')} className="p-2.5 text-right cursor-pointer">Cursos {renderSortIcon('cursos')}</th>
+                      <th onClick={() => handleSort('vagas')} className="p-2.5 text-right cursor-pointer">Vagas {renderSortIcon('vagas')}</th>
+                      <th onClick={() => handleSort('matriculados')} className="p-2.5 text-right cursor-pointer">Matrículas {renderSortIcon('matriculados')}</th>
+                      <th onClick={() => handleSort('qualificados')} className="p-2.5 text-right cursor-pointer">Qualificados {renderSortIcon('qualificados')}</th>
+                      <th onClick={() => handleSort('taxaConclusao')} className="p-2.5 text-center cursor-pointer min-w-[120px]">Taxa Conclusão {renderSortIcon('taxaConclusao')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {paginatedData.length > 0 ? (
+                      paginatedData.map((row, idx) => {
+                        const temMatriculas = row.matriculados > 0;
+                        const pctConclusao = temMatriculas ? Math.round((row.qualificados / row.matriculados) * 100) : 0;
+
+                        return (
+                          <tr key={idx} onClick={() => setSelectedRowDetail(row)} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition cursor-pointer">
+                            <td className="p-2.5 font-bold text-slate-800 dark:text-white">{row.ano || '-'}</td>
+                            <td className="p-2.5 font-semibold text-slate-700 dark:text-slate-200">{row.regiao || '-'}</td>
+                            <td className="p-2.5 font-medium">{row.tipo || '-'}</td>
+                            <td className="p-2.5">
+                              <div className="font-semibold text-slate-800 dark:text-slate-100">{row.parceiro || '-'}</div>
+                              {row.fonte && (
+                                <span className="inline-block text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded px-1">
+                                  Fonte: {row.fonte}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5 font-mono text-[10px]">{row.instrumento || '-'}</td>
+                            <td className="p-2.5 font-mono text-[10px] font-medium">{row.sei || '-'}</td>
+                            <td className="p-2.5 font-medium">
+                              <span className="font-bold text-blue-600 dark:text-blue-400 mr-1">{row.uf || '-'}</span> {row.cidade ? `- ${row.cidade}` : ''}
+                            </td>
+                            <td className="p-2.5 text-right font-medium">{row.cursos || 0}</td>
+                            <td className="p-2.5 text-right font-semibold text-slate-800 dark:text-white">{row.vagas.toLocaleString('pt-BR')}</td>
+                            <td className="p-2.5 text-right text-amber-600 dark:text-amber-400 font-semibold">{row.matriculados.toLocaleString('pt-BR')}</td>
+                            <td className="p-2.5 text-right text-emerald-600 dark:text-emerald-400 font-bold">{row.qualificados.toLocaleString('pt-BR')}</td>
+                            <td className="p-2.5">
+                              {temMatriculas ? (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden no-print">
+                                    <div className={`h-1.5 rounded-full ${pctConclusao > 75 ? 'bg-emerald-500' : pctConclusao > 40 ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${pctConclusao}%` }}></div>
+                                  </div>
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 w-full text-center">{pctConclusao}%</span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-medium text-slate-400 block text-center">N/A (0 mat.)</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="12" className="p-6 text-center text-slate-400 font-medium">Nenhum registro encontrado.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {sortedData.length > 0 && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs no-print">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">
+                    Mostrando <strong>{((currentPage - 1) * itemsPerPage) + 1}</strong> a <strong>{Math.min(currentPage * itemsPerPage, sortedData.length)}</strong> de <strong>{sortedData.length}</strong> itens
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 bg-white dark:bg-slate-700 border rounded-lg font-medium disabled:opacity-40"
+                    >
+                      Anterior
+                    </button>
+
+                    <span className="font-semibold px-2">Página {currentPage} de {totalPages}</span>
+
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1.5 bg-white dark:bg-slate-700 border rounded-lg font-medium disabled:opacity-40"
+                    >
+                      Próximo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MODAL DETALHAMENTO */}
           {selectedRowDetail && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl p-6 space-y-6 relative max-h-[90vh] overflow-y-auto">
@@ -1489,12 +1575,7 @@
                       {selectedRowDetail.cidade} - {selectedRowDetail.uf} ({selectedRowDetail.regiao}) | Exercício {selectedRowDetail.ano}
                     </p>
                   </div>
-                  <button 
-                    onClick={() => setSelectedRowDetail(null)}
-                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg font-bold"
-                  >
-                    ✕
-                  </button>
+                  <button onClick={() => setSelectedRowDetail(null)} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg font-bold">✕</button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-xs">
@@ -1530,10 +1611,7 @@
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-amber-500 h-2 rounded-full" 
-                          style={{ width: `${selectedRowDetail.vagas > 0 ? Math.min(100, (selectedRowDetail.matriculados / selectedRowDetail.vagas) * 100) : 0}%` }}
-                        ></div>
+                        <div className="bg-amber-500 h-2 rounded-full" style={{ width: `${selectedRowDetail.vagas > 0 ? Math.min(100, (selectedRowDetail.matriculados / selectedRowDetail.vagas) * 100) : 0}%` }}></div>
                       </div>
                     </div>
 
@@ -1546,21 +1624,15 @@
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-emerald-500 h-2 rounded-full" 
-                          style={{ width: `${selectedRowDetail.matriculados > 0 ? Math.min(100, (selectedRowDetail.qualificados / selectedRowDetail.matriculados) * 100) : 0}%` }}
-                        ></div>
+                        <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${selectedRowDetail.matriculados > 0 ? Math.min(100, (selectedRowDetail.qualificados / selectedRowDetail.matriculados) * 100) : 0}%` }}></div>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex justify-end pt-2">
-                  <button 
-                    onClick={() => setSelectedRowDetail(null)}
-                    className="px-5 py-2.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl font-bold text-xs transition"
-                  >
-                    Fechar Detalhes
+                  <button onClick={() => setSelectedRowDetail(null)} className="px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs">
+                    Fechar
                   </button>
                 </div>
               </div>
